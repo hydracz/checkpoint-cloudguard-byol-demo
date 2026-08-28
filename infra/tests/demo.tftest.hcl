@@ -7,6 +7,7 @@ override_module {
     resource_group_name         = "rg-checkpoint-mock"
     resource_group_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock"
     vnet_name                   = "checkpoint-mock-hub-vnet"
+    vnet_id                     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet"
     vm_name                     = "checkpoint-mock-gateway"
     public_ip_address           = "198.51.100.20"
     frontend_private_ip_address = "10.60.0.4"
@@ -51,6 +52,14 @@ run "default_demo_plan" {
   assert {
     condition     = var.immutable_retention_days == 365
     error_message = "The default immutable retention period must be 365 days."
+  }
+
+  assert {
+    condition = alltrue([
+      azurerm_virtual_network_peering.eu_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
+      azurerm_virtual_network_peering.remote_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
+    ])
+    error_message = "Spoke-to-hub peerings must depend on the module-created hub VNet ID."
   }
 }
 

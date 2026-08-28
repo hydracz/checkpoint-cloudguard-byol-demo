@@ -14,7 +14,6 @@ locals {
 
   gateway_name           = "${var.prefix}-gateway"
   hub_vnet_name          = "${var.prefix}-hub-vnet"
-  hub_vnet_id            = "${module.checkpoint.resource_group_id}/providers/Microsoft.Network/virtualNetworks/${local.hub_vnet_name}"
   eu_spoke_vnet_name     = "${var.prefix}-eu-spoke-vnet"
   remote_spoke_vnet_name = "${var.prefix}-remote-spoke-vnet"
 

@@ -85,7 +85,7 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
 ## 前置条件
 
 - Terraform `>= 1.9`、Azure CLI、`jq`、OpenSSL、Python 3。
-- 目标 Azure 订阅的 Contributor 权限，以及接受 Marketplace 条款的权限。
+- 目标 Azure 订阅的 Contributor 权限，以及接受 Marketplace 条款的权限。订阅的商务市场必须允许购买 Check Point `check-point-cg-r82`/`check-point-cg-r8210` Offer；该 Offer 不向 `CN` 商务市场销售。
 - 交互部署默认复用 `az login`；CI 可选使用完整的 Service Principal（tenant/client/secret 三项缺一不可）。
 - Check Point BYOL entitlement。若订阅/试用状态不允许安装 Application Control、URL Filtering 或 HTTPS Inspection policy，基础设施仍可部署，但策略安装会明确失败。
 - 一个 OpenSSH 公钥和受限的管理公网 CIDR。
@@ -320,6 +320,8 @@ CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \
 
 | 现象 | 原因与处理 |
 | --- | --- |
+| `ResourcePurchaseValidationFailed` / `not to be sold in market: 'CN'` | 订阅的商务市场不允许购买 Check Point Marketplace Offer；接受条款、切换 Azure 区域或重试均不能解决。改用商务市场受支持且有购买权限的订阅，然后用新订阅 ID 重新部署。 |
+| Peering 报 hub VNet `was not found` | 旧版本手工拼接 hub VNet ID，可能未建立正确创建依赖；更新到包含 `vnet_id` 输出的版本后重新运行部署。 |
 | `SkuNotAvailable` | VM SKU catalog 存在不代表当前订阅有容量。更换 EU 区域，或在 `checkpoint_vm_size` 使用支持的 32 GiB 备用规格，例如 `Standard_F16s`。 |
 | `D8s_v6` 无法部署 Check Point | Dv6 仅支持 Gen2，当前 `standalone` `mgmt-byol` 镜像为 Gen1；使用 `D8s_v5`、`F16s` 或经 Check Point 支持矩阵确认的其他 Gen1 规格。 |
 | SSH 用户 `notused` 失败 | Gaia 登录用户是 `admin`；`notused` 只是 Azure metadata 兼容占位。 |

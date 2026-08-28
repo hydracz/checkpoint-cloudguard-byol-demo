@@ -48,7 +48,7 @@ resource "azurerm_virtual_network_peering" "eu_to_hub" {
   name                         = "eu-spoke-to-hub"
   resource_group_name          = module.checkpoint.resource_group_name
   virtual_network_name         = azurerm_virtual_network.eu_spoke.name
-  remote_virtual_network_id    = local.hub_vnet_id
+  remote_virtual_network_id    = module.checkpoint.vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
 }
@@ -66,7 +66,7 @@ resource "azurerm_virtual_network_peering" "remote_to_hub" {
   name                         = "remote-spoke-to-hub"
   resource_group_name          = module.checkpoint.resource_group_name
   virtual_network_name         = azurerm_virtual_network.remote_spoke.name
-  remote_virtual_network_id    = local.hub_vnet_id
+  remote_virtual_network_id    = module.checkpoint.vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
 }

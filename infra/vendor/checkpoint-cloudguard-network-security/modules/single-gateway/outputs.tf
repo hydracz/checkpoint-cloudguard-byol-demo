@@ -18,6 +18,11 @@ output "vnet_name" {
   value       = module.vnet.name
 }
 
+output "vnet_id" {
+  description = "The ID of the virtual network used by the gateway."
+  value       = module.vnet.id
+}
+
 output "subnet_ids" {
   description = "The IDs of the subnets used by the gateway [frontend, backend]."
   value       = module.vnet.subnets

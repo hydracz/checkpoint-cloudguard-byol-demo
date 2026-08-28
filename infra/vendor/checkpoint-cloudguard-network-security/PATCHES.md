@@ -61,3 +61,11 @@ lifecycle {
 视为替换 Public IP，但已绑定 Gateway NIC 的 Public IP 不能直接删除。
 `ignore_changes` 只忽略 Azure Policy 管理的 `ip_tags`，不忽略静态 IP、SKU、
 资源组或网络配置。
+
+## Patch 4：透传 Virtual Network ID
+
+涉及文件：`modules/single-gateway/outputs.tf`
+
+Single Gateway module 增加 `vnet_id` output，透传下层 VNet module 的资源 ID。
+根 module 使用该 ID 创建 spoke-to-hub peering，使 Terraform 直接依赖实际 hub VNet，
+避免手工拼接 ID 只依赖先创建完成的 Resource Group 而引发竞态。
