@@ -47,6 +47,7 @@ if grep -RInE --include='*.tf' 'source[[:space:]]*=[[:space:]]*"[A-Za-z0-9_-]+/[
 fi
 
 if grep -RIn \
+  --exclude-dir=.git \
   --exclude-dir=.terraform \
   --exclude-dir=.local \
   --exclude-dir=evidence \
