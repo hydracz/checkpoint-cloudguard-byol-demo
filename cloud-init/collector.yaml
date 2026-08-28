@@ -1,0 +1,14 @@
+#cloud-config
+write_files:
+  - path: /etc/rsyslog.d/20-checkpoint-remote.conf
+    permissions: "0644"
+    content: |
+      module(load="imudp")
+      input(type="imudp" port="514")
+      module(load="imtcp")
+      input(type="imtcp" port="514")
+      if ($fromhost-ip != "127.0.0.1") then {
+        action(type="omfile" file="/var/log/checkpoint.log")
+      }
+runcmd:
+  - [systemctl, restart, rsyslog]

@@ -1,0 +1,13 @@
+.local/
+evidence/
+.terraform/
+infra/.terraform/
+infra/*.auto.tfvars.json
+configs/*.tfvars
+!configs/*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.pem
+*.p12
+*.key

@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+required=(
+  README.md REQUIREMENTS.md ATTRIBUTION.md LICENSE
+  infra/.terraform.lock.hcl infra/versions.tf infra/variables.tf infra/locals.tf infra/checkpoint.tf
+  infra/vendor/README.md infra/vendor/vendor-checksums.sha256
+  infra/vendor/checkpoint-cloudguard-network-security/LICENSE
+  infra/vendor/checkpoint-cloudguard-network-security/PATCHES.md
+  infra/networking.tf infra/workloads.tf infra/logging.tf infra/outputs.tf
+  infra/tests/demo.tftest.hcl
+  configs/demo.tfvars.example
+  cloud-init/workload.yaml cloud-init/collector.yaml
+  scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh
+  scripts/verify-vendor.sh
+  scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh
+  scripts/enable-audit-export.sh
+  scripts/vm-case.sh scripts/run-tests.sh scripts/query-logs.sh
+  scripts/lock-worm.sh scripts/destroy.sh
+  docs/architecture.md docs/drawio-architecture.md docs/network-ip-plan.md
+  docs/validated-results.md
+  docs/checkpoint-cloudguard-byol-architecture.drawio
+  docs/checkpoint-cloudguard-byol-test-architecture.svg
+  docs/requirement-mapping.md docs/policy-runbook.md docs/test-matrix.md
+)
+
+for file in "${required[@]}"; do
+  [[ -f "$ROOT/$file" ]] || {
+    echo "Missing required file: $file" >&2
+    exit 1
+  }
+done
+
+grep -q 'source = "./vendor/checkpoint-cloudguard-network-security/modules/single-gateway"' "$ROOT/infra/checkpoint.tf"
+! grep -q 'source.*CheckPointSW/cloudguard-network-security' "$ROOT/infra/checkpoint.tf"
+! grep -q 'module "regions"' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/common/common/main.tf"
+! grep -q '^provider "azurerm"' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/versions.tf"
+grep -q 'default     = "Standard_D8s_v5"' "$ROOT/infra/variables.tf"
+grep -q 'default     = "Standard_D4ls_v6"' "$ROOT/infra/variables.tf"
+grep -q 'default     = "example.org"' "$ROOT/infra/variables.tf"
+grep -q 'subscription_id.*00000000-0000-0000-0000-000000000000' "$ROOT/configs/demo.tfvars.example"
+if grep -RInE --include='*.tf' 'source[[:space:]]*=[[:space:]]*"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+"' "$ROOT/infra/vendor"; then
+  echo "Vendored module still contains a remote registry module source." >&2
+  exit 1
+fi
+
+if grep -RIn \
+  --exclude-dir=.terraform \
+  --exclude-dir=.local \
+  --exclude-dir=evidence \
+  --exclude='*.tfstate*' \
+  -i 'v[i]vo' "$ROOT"; then
+  echo "Customer-specific naming found; the standalone demo must remain generic." >&2
+  exit 1
+fi
+grep -q 'installation_type.*= "standalone"' "$ROOT/infra/checkpoint.tf"
+grep -q 'vm_os_sku.*= local.checkpoint_plan' "$ROOT/infra/checkpoint.tf"
+grep -q 'mgmt-byol' "$ROOT/infra/locals.tf"
+grep -q 'management_cidr != "0.0.0.0/0"' "$ROOT/infra/variables.tf"
+grep -q 'default-via-checkpoint' "$ROOT/infra/networking.tf"
+grep -q 'remote-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
+grep -q 'eu-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
+grep -q 'allow_forwarded_traffic.*= true' "$ROOT/infra/networking.tf"
+grep -q 'table_names.*= \["Syslog"\]' "$ROOT/infra/logging.tf"
+grep -q 'count = var.enable_log_data_export ? 1 : 0' "$ROOT/infra/logging.tf"
+grep -q 'am-syslog' "$ROOT/infra/logging.tf"
+grep -q 'allowProtectedAppendWrites.*= true' "$ROOT/infra/logging.tf"
+grep -q 'state.*= "Unlocked"' "$ROOT/infra/logging.tf"
+grep -q 'publicNetworkAccess.*= "Disabled"' "$ROOT/infra/logging.tf"
+grep -q 'enable-https-inspection true' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'add outbound-inspection-certificate' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'show updatable-objects-repository-content' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'set static-route' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'cp_log_export add' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q -- '--lock-worm' "$ROOT/scripts/deploy.sh"
+grep -q 'enable-audit-export.sh' "$ROOT/scripts/deploy.sh"
+grep -q -- '--yes' "$ROOT/scripts/lock-worm.sh"
+grep -q 'CONFIRM_DESTROY' "$ROOT/scripts/destroy.sh"
+grep -q '^\.local/' "$ROOT/.gitignore"
+
+if grep -RInE \
+  --exclude-dir=.terraform \
+  --exclude-dir=.local \
+  --exclude='*.tfvars.example' \
+  --include='*.tf' \
+  --include='*.tfvars' \
+  '(client_secret|admin_password|ARM_CLIENT_SECRET)[[:space:]]*=[[:space:]]*"[^"]+"' \
+  "$ROOT"; then
+  echo "Potential committed secret found." >&2
+  exit 1
+fi
+
+for id in $(seq -w 1 13); do
+  grep -q "T${id}" "$ROOT/docs/test-matrix.md" || {
+    echo "T${id} absent from test matrix." >&2
+    exit 1
+  }
+done
+
+python3 - "$ROOT/docs/checkpoint-cloudguard-byol-architecture.drawio" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+if root.tag != "mxfile":
+    raise SystemExit("draw.io root must be mxfile")
+names = [diagram.attrib.get("name") for diagram in root.findall("diagram")]
+expected = ["01-现场环境资源与IP", "02-路由与流量", "03-安全策略与TLS", "04-部署与审计"]
+if names != expected:
+    raise SystemExit(f"unexpected draw.io pages: {names!r}")
+for diagram in root.findall("diagram"):
+    graph_root = diagram.find("mxGraphModel/root")
+    if graph_root is None:
+        raise SystemExit(f"diagram {diagram.attrib.get('name')} has no mxGraphModel/root")
+    cells = graph_root.findall("mxCell")
+    ids = {cell.attrib.get("id") for cell in cells}
+    edges = [cell for cell in cells if cell.attrib.get("edge") == "1"]
+    for edge in edges:
+        for field in ("source", "target"):
+            reference = edge.attrib.get(field)
+            if reference and reference not in ids:
+                raise SystemExit(
+                    f"diagram {diagram.attrib.get('name')} edge {edge.attrib.get('id')} "
+                    f"has missing {field} {reference}"
+                )
+    if diagram.attrib.get("name") == "01-资源与IP规划" and len(edges) > 10:
+        raise SystemExit("resource/IP page has too many edges and risks becoming unreadable")
+PY
+
+python3 - "$ROOT/docs/checkpoint-cloudguard-byol-test-architecture.svg" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+if not root.tag.endswith("svg"):
+    raise SystemExit("architecture preview must be an SVG")
+if root.attrib.get("viewBox") != "0 0 1600 900":
+    raise SystemExit("architecture preview has an unexpected viewBox")
+PY
+
+for script in "$ROOT"/scripts/*.sh "$ROOT"/tests/*.sh; do
+  bash -n "$script"
+done
+
+"$ROOT/scripts/verify-vendor.sh" >/dev/null
+
+echo "Repository policy checks passed."

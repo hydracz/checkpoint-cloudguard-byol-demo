@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Check Point CloudGuard BYOL 现场环境架构</title>
+  <desc id="desc">North Europe 主区域中的 Check Point、workload 和审计服务，与 West Europe remote workload 通过 Global VNet Peering 和 UDR 连接。</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2684ff"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#36b37e"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#6554c0"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ff8b00"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #172b4d; }
+      .title { font-size: 26px; font-weight: 700; }
+      .subtitle { font-size: 14px; fill: #5e6c84; }
+      .region-title { font-size: 17px; font-weight: 700; }
+      .group-title { font-size: 14px; font-weight: 700; }
+      .node-title { font-size: 14px; font-weight: 700; }
+      .node-text { font-size: 12px; }
+      .edge-label { font-size: 12px; font-weight: 600; }
+      .small { font-size: 11px; fill: #5e6c84; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="40" y="42" class="title">Check Point CloudGuard BYOL 现场环境架构</text>
+  <text x="40" y="68" class="subtitle">North Europe 主区域 + West Europe 跨区域 workload｜所有业务流量经 10.60.1.4｜日志留存在 EU</text>
+
+  <rect x="25" y="90" width="1550" height="755" rx="18" fill="#f7fbff" stroke="#005a9e" stroke-width="2" stroke-dasharray="8 5"/>
+  <text x="45" y="118" class="group-title" fill="#005a9e">EU DATA BOUNDARY</text>
+
+  <rect x="50" y="135" width="1130" height="680" rx="14" fill="#eaf4ff" stroke="#0078d4" stroke-width="2"/>
+  <text x="70" y="165" class="region-title" fill="#004578">North Europe（Primary / 已验证）</text>
+
+  <rect x="1200" y="135" width="345" height="680" rx="14" fill="#e8f7f4" stroke="#008272" stroke-width="2"/>
+  <text x="1220" y="165" class="region-title" fill="#005b50">West Europe（Remote / 已验证）</text>
+
+  <!-- External and management row -->
+  <rect x="80" y="195" width="210" height="75" rx="10" fill="#fff0b3" stroke="#ff8b00" stroke-width="2"/>
+  <text x="185" y="220" text-anchor="middle" class="node-title">管理员</text>
+  <text x="185" y="242" text-anchor="middle" class="node-text">management_cidr /32</text>
+  <text x="185" y="260" text-anchor="middle" class="small">SSH / Gaia / SmartConsole</text>
+
+  <ellipse cx="535" cy="232" rx="100" ry="48" fill="#ffffff" stroke="#344563" stroke-width="2"/>
+  <text x="535" y="238" text-anchor="middle" class="node-title">Internet</text>
+
+  <rect x="745" y="185" width="250" height="95" rx="10" fill="#fff0b3" stroke="#ff8b00" stroke-width="2"/>
+  <text x="870" y="210" text-anchor="middle" class="node-title">Frontend subnet 10.60.0.0/24</text>
+  <text x="870" y="233" text-anchor="middle" class="node-text">eth0 / NIC: cpbyol-gateway-eth0</text>
+  <text x="870" y="253" text-anchor="middle" class="node-text">10.60.0.4 + Standard Static PIP</text>
+  <text x="870" y="271" text-anchor="middle" class="small">External / Hide NAT / 可选 DNAT</text>
+
+  <path d="M185 195 L185 160 L870 160 L870 185" fill="none" stroke="#ff8b00" stroke-width="3" marker-end="url(#arrow-orange)"/>
+  <text x="430" y="151" class="edge-label" fill="#974f0c">受限管理（独立路径）</text>
+  <line x1="635" y1="250" x2="735" y2="250" stroke="#2684ff" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <text x="650" y="275" class="edge-label" fill="#0747a6">公网出入</text>
+
+  <!-- Data plane row -->
+  <rect x="80" y="350" width="245" height="120" rx="10" fill="#b3f5ff" stroke="#00a3bf" stroke-width="2"/>
+  <text x="202" y="378" text-anchor="middle" class="node-title">Primary workload VM</text>
+  <text x="202" y="401" text-anchor="middle" class="node-text">cpbyol-eu-workload</text>
+  <text x="202" y="422" text-anchor="middle" class="node-text">D4ls_v6（4C/8GiB）</text>
+  <text x="202" y="443" text-anchor="middle" class="node-text">NIC 10.61.0.4｜无公网 IP</text>
+  <text x="202" y="462" text-anchor="middle" class="small">Spoke 10.61.0.0/16</text>
+
+  <rect x="365" y="350" width="235" height="120" rx="10" fill="#deebff" stroke="#2684ff" stroke-width="2"/>
+  <text x="482" y="378" text-anchor="middle" class="node-title">Primary UDR</text>
+  <text x="482" y="402" text-anchor="middle" class="node-text">0.0.0.0/0 → 10.60.1.4</text>
+  <text x="482" y="423" text-anchor="middle" class="node-text">10.62.0.0/16 → 10.60.1.4</text>
+  <text x="482" y="444" text-anchor="middle" class="node-text">10.60.0.0/16 → 10.60.1.4</text>
+
+  <rect x="650" y="325" width="365" height="170" rx="12" fill="#ffebe6" stroke="#ff5630" stroke-width="3"/>
+  <text x="832" y="354" text-anchor="middle" class="node-title">Check Point CloudGuard R82 standalone BYOL</text>
+  <text x="832" y="379" text-anchor="middle" class="node-text">VM: cpbyol-gateway｜F16s（16 vCPU/32 GiB，现场备用规格）</text>
+  <text x="832" y="404" text-anchor="middle" class="node-text">Management + Security Gateway + Log Server</text>
+  <rect x="695" y="430" width="275" height="45" rx="8" fill="#abf5d1" stroke="#36b37e" stroke-width="2"/>
+  <text x="832" y="449" text-anchor="middle" class="node-title">eth1 / Backend 10.60.1.4</text>
+  <text x="832" y="466" text-anchor="middle" class="small">NVA next hop｜IP forwarding｜Gaia static routes</text>
+
+  <rect x="1230" y="335" width="280" height="130" rx="10" fill="#abf5d1" stroke="#008272" stroke-width="2"/>
+  <text x="1370" y="364" text-anchor="middle" class="node-title">Remote workload VM</text>
+  <text x="1370" y="387" text-anchor="middle" class="node-text">cpbyol-remote-workload</text>
+  <text x="1370" y="408" text-anchor="middle" class="node-text">D4ls_v6（4C/8GiB）</text>
+  <text x="1370" y="429" text-anchor="middle" class="node-text">NIC 10.62.0.4｜无公网 IP</text>
+  <text x="1370" y="449" text-anchor="middle" class="small">Spoke 10.62.0.0/16</text>
+
+  <line x1="325" y1="410" x2="355" y2="410" stroke="#2684ff" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <line x1="600" y1="410" x2="640" y2="410" stroke="#2684ff" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <line x1="1220" y1="410" x2="1025" y2="410" stroke="#36b37e" stroke-width="3" marker-end="url(#arrow-green)"/>
+  <text x="1035" y="395" class="edge-label" fill="#006644">Global VNet Peering + Remote UDR</text>
+  <line x1="870" y1="325" x2="870" y2="290" stroke="#2684ff" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <text x="900" y="310" class="edge-label" fill="#0747a6">L4/L7 · Geo · Application/URL · TLS</text>
+
+  <!-- Audit row -->
+  <rect x="80" y="575" width="245" height="110" rx="10" fill="#eae6ff" stroke="#6554c0" stroke-width="2"/>
+  <text x="202" y="603" text-anchor="middle" class="node-title">Syslog collector</text>
+  <text x="202" y="626" text-anchor="middle" class="node-text">cpbyol-log-collector｜D4ls_v6</text>
+  <text x="202" y="647" text-anchor="middle" class="node-text">NIC 10.60.2.4</text>
+  <text x="202" y="668" text-anchor="middle" class="small">rsyslog + Azure Monitor Agent</text>
+
+  <rect x="400" y="575" width="220" height="110" rx="10" fill="#eae6ff" stroke="#6554c0" stroke-width="2"/>
+  <text x="510" y="607" text-anchor="middle" class="node-title">Data Collection Rule</text>
+  <text x="510" y="633" text-anchor="middle" class="node-text">Microsoft-Syslog</text>
+  <text x="510" y="657" text-anchor="middle" class="small">All facilities / levels</text>
+
+  <rect x="695" y="575" width="225" height="110" rx="10" fill="#eae6ff" stroke="#6554c0" stroke-width="2"/>
+  <text x="807" y="607" text-anchor="middle" class="node-title">EU Log Analytics</text>
+  <text x="807" y="633" text-anchor="middle" class="node-text">Syslog table｜90 days</text>
+  <text x="807" y="657" text-anchor="middle" class="small">Check Point Accept / Drop / Install</text>
+
+  <rect x="990" y="560" width="190" height="140" rx="10" fill="#eae6ff" stroke="#6554c0" stroke-width="2"/>
+  <text x="1085" y="590" text-anchor="middle" class="node-title">EU Storage (GRS)</text>
+  <text x="1085" y="616" text-anchor="middle" class="node-text">Private / public access disabled</text>
+  <text x="1085" y="638" text-anchor="middle" class="node-text">Container: am-syslog</text>
+  <text x="1085" y="660" text-anchor="middle" class="node-text">365-day protected append WORM</text>
+  <text x="1085" y="682" text-anchor="middle" class="small">现场状态：Unlocked</text>
+
+  <path d="M832 495 L832 535 L202 535 L202 575" fill="none" stroke="#6554c0" stroke-width="3" marker-end="url(#arrow-purple)"/>
+  <text x="450" y="526" class="edge-label" fill="#403294">cp_log_export UDP/514</text>
+  <line x1="325" y1="630" x2="390" y2="630" stroke="#6554c0" stroke-width="3" marker-end="url(#arrow-purple)"/>
+  <line x1="620" y1="630" x2="685" y2="630" stroke="#6554c0" stroke-width="3" marker-end="url(#arrow-purple)"/>
+  <line x1="920" y1="630" x2="980" y2="630" stroke="#6554c0" stroke-width="3" marker-end="url(#arrow-purple)"/>
+  <text x="932" y="616" class="small">Continuous Export</text>
+
+  <rect x="80" y="735" width="1430" height="52" rx="10" fill="#f4f5f7" stroke="#dfe1e6"/>
+  <text x="100" y="758" class="node-text">强制路径：</text>
+  <text x="185" y="758" class="small">两个 workload 的 0/0、对端 Spoke 和 Hub 前缀均指向 10.60.1.4；Gaia 通过 eth1 静态路由返回。</text>
+  <text x="100" y="778" class="node-text">未启用路径：</text>
+  <text x="185" y="778" class="small">T13 对应的入站 DNAT 默认关闭。正式 BYOL 和 WORM Lock 由客户确认后执行。</text>
+
+  <text x="50" y="870" class="small">可编辑源：checkpoint-cloudguard-byol-architecture.drawio｜完整 IP/路由表：network-ip-plan.md｜现场记录：validated-results.md</text>
+</svg>

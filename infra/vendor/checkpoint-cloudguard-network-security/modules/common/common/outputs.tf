@@ -1,0 +1,116 @@
+output "resource_group_name" {
+  value = local.resource_group_name
+}
+
+output "resource_group_id" {
+  value = local.resource_group_id
+}
+
+output "resource_group_location" {
+  value = local.resource_group_location
+}
+
+output "azurerm_resource_group_id" {
+  value = local.resource_group_id
+}
+
+output "admin_username" {
+  value = var.admin_username
+}
+
+output "admin_password" {
+  value     = var.admin_password
+  sensitive = true
+}
+
+output "vm_instance_identity" {
+  value = var.vm_instance_identity_type
+}
+
+output "module_name" {
+  value = var.module_name
+}
+
+output "module_version" {
+  value = var.module_version
+}
+
+output "bootstrap_script" {
+  value = var.bootstrap_script
+}
+
+output "os_version" {
+  value = var.os_version
+}
+
+output "installation_type" {
+  value = var.installation_type
+}
+
+output "number_of_vm_instances" {
+  value = var.number_of_vm_instances
+}
+
+output "allow_upload_download" {
+  value = var.allow_upload_download
+}
+
+output "is_blink" {
+  value = var.is_blink
+}
+
+output "vm_size" {
+  value = var.vm_size
+}
+
+output "delete_os_disk_on_termination" {
+  value = var.delete_os_disk_on_termination
+}
+
+output "vm_os_offer" {
+  value = var.vm_os_offer
+}
+
+output "vm_os_sku" {
+  value = var.vm_os_sku
+}
+
+output "vm_os_version" {
+  value = var.vm_os_version
+}
+
+output "disk_size" {
+  value = var.disk_size
+}
+
+output "publisher" {
+  value = var.publisher
+}
+
+output "storage_os_disk_create_option" {
+  value = var.storage_os_disk_create_option
+}
+
+output "storage_os_disk_caching" {
+  value = var.storage_os_disk_caching
+}
+
+output "managed_disk_type" {
+  value = var.managed_disk_type
+}
+
+output "authentication_type" {
+  value = var.authentication_type
+}
+
+output "tags" {
+  value = var.tags
+}
+
+output "role_definition" {
+  value = var.role_definition
+}
+
+output "SSH_authentication_type_condition" {
+  value = var.authentication_type == "SSH Public Key" ? true : false
+}

@@ -1,0 +1,410 @@
+//********************** Basic Configuration Variables **************************//
+variable "subscription_id" {
+  description = "Subscription ID"
+  type        = string
+}
+
+variable "tenant_id" {
+  description = "Tenant ID"
+  type        = string
+}
+
+variable "client_id" {
+  description = "Application ID(Client ID)"
+  type        = string
+}
+
+variable "client_secret" {
+  description = "A secret string that the application uses to prove its identity when requesting a token. Also can be referred to as application password."
+  type        = string
+  sensitive   = true
+}
+
+variable "resource_group_name" {
+  description = "Azure Resource Group name to build into."
+  type        = string
+}
+
+variable "single_gateway_name" {
+  description = "Single Gateway name."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?$", var.single_gateway_name))
+    error_message = "Variable [single_gateway_name] must be 1-64 characters, contain only alphanumerics and hyphens, and must not start or end with a hyphen."
+  }
+}
+
+variable "location" {
+  description = "The location/region where resource will be created. The full list of Azure regions can be found at https://azure.microsoft.com/regions."
+  type        = string
+}
+
+variable "extended_zone" {
+  description = "Deploy in Azure Extended Zone for ultra-low latency edge computing. Use 'losangeles', 'perth', or 'None' for standard regions."
+  type        = string
+  default     = "None"
+
+  validation {
+    condition     = contains(["None", "losangeles", "perth"], var.extended_zone)
+    error_message = "Variable [extended_zone] must be one of: 'None', 'losangeles', 'perth'."
+  }
+
+  validation {
+    condition     = var.extended_zone == "None" || contains(lookup(local.extended_zone_region_map, var.extended_zone, []), var.location)
+    error_message = "Extended zone '${var.extended_zone}' is not available in region '${var.location}'. Los Angeles requires westus; Perth requires australiaeast."
+  }
+}
+
+variable "tags" {
+  description = "Assign tags by resource."
+  type        = map(map(string))
+  default     = {}
+}
+
+//********************** Virtual Machine Instances Variables **************************//
+variable "source_image_vhd_uri" {
+  description = "The URI of the blob containing the development image. Please use noCustomUri if you want to use marketplace images."
+  type        = string
+  default     = "noCustomUri"
+}
+
+variable "hyper_v_generation" {
+  description = "The Hyper-V generation of the virtual machine. Set to 'V2' to deploy a Generation 2 VM, or 'V1' for Generation 1. 'V2' is supported on Gaia version R82.10 or later and is not supported with installation_type 'standalone'."
+  type        = string
+  default     = "V1"
+  validation {
+    condition     = contains(["V1", "V2"], var.hyper_v_generation)
+    error_message = "Variable [hyper_v_generation] must be one of 'V1', 'V2'."
+  }
+  validation {
+    condition     = var.hyper_v_generation != "V2" || var.source_image_vhd_uri != "noCustomUri" || (!contains(["R8110", "R8120", "R82"], var.os_version) && var.installation_type != "standalone")
+    error_message = "hyper_v_generation can be set to 'V2' only for a custom image, or for a marketplace image on Gaia version R82.10 or later and not with installation_type 'standalone'."
+  }
+}
+
+variable "admin_username" {
+  description = "Administrator username of deployed VM. Due to Azure limitations 'notused' name can be used."
+  type        = string
+  default     = "notused"
+}
+
+variable "authentication_type" {
+  description = "Specifies whether a password authentication or SSH Public Key authentication should be used."
+  type        = string
+}
+
+variable "admin_password" {
+  description = "(Optional) Administrator password of the deployed VM. Required when authentication_type is 'Password'."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.authentication_type == "SSH Public Key" || var.admin_password != ""
+    error_message = "admin_password is required when authentication_type is 'Password'."
+  }
+}
+
+variable "admin_SSH_key" {
+  description = "(Optional) The SSH public key for SSH authentication to the template instances."
+  type        = string
+  default     = ""
+}
+
+variable "sic_key" {
+  description = "Secure Internal Communication (SIC) key."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.sic_key) >= 12
+    error_message = "Variable [sic_key] must be at least 12 characters long."
+  }
+}
+
+variable "serial_console_password_hash" {
+  description = "(Optional) Password hash for serial console connection. Relevant when using SSH Public Key authentication."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "maintenance_mode_password_hash" {
+  description = "(Optional) Maintenance mode password hash, relevant only for R81.20 and higher versions."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "installation_type" {
+  description = "Installation type."
+  type        = string
+  default     = "gateway"
+
+  validation {
+    condition = contains([
+      "gateway",
+      "standalone"
+    ], var.installation_type)
+    error_message = "Variable [installation_type] must be one of the following: 'gateway', 'standalone'."
+  }
+}
+
+variable "vm_size" {
+  description = "Specifies size of Virtual Machine."
+  type        = string
+}
+
+variable "disk_size" {
+  description = "Storage data disk size size(GB). Select a number between 100 and 3995."
+  type        = string
+  default     = "200"
+}
+
+variable "os_version" {
+  description = "GAIA OS version."
+  type        = string
+  validation {
+    condition     = var.extended_zone == "None" || var.os_version != "R8110"
+    error_message = "Extended Zones are not supported for R81.10 (R8110). Please use a higher version or set extended_zone to 'None'."
+  }
+}
+
+variable "vm_os_sku" {
+  description = "The sku of the image to be deployed."
+  type        = string
+}
+
+variable "vm_os_offer" {
+  description = "The name of the image offer to be deployed."
+  type        = string
+}
+
+variable "allow_upload_download" {
+  description = "Automatically download Blade Contracts and other important data. Improve product experience by sending data to Check Point."
+  type        = bool
+}
+
+variable "admin_shell" {
+  description = "The admin shell to configure on machine or the first time."
+  type        = string
+  default     = "/etc/cli.sh"
+}
+
+variable "bootstrap_script" {
+  description = "An optional script to run on the initial boot."
+  type        = string
+  default     = ""
+}
+
+variable "is_blink" {
+  description = "Define if blink image is used for deployment."
+  default     = true
+}
+
+
+variable "enable_custom_metrics" {
+  description = "Indicates whether CloudGuard Metrics will be use for Cluster members monitoring."
+  type        = bool
+  default     = true
+}
+
+variable "zone" {
+  description = "The availability zone to use for the Virtual Machine. Changing this forces a new resource to be created."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.extended_zone == "None" || var.zone == ""
+    error_message = "Variable [zone] must be empty when using extended zones."
+  }
+}
+
+//********************** Smart-1 Cloud Variables **************************//
+variable "smart_1_cloud_token" {
+  description = "Smart-1 Cloud Token."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+//********************** Management Variables **************************//
+variable "management_GUI_client_network" {
+  description = "Allowed GUI clients - GUI clients network CIDR. Use '0.0.0.0/0' to allow access from any IPv4 address."
+  type        = string
+  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(regex("^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/(3[0-2]|2[0-9]|1[0-9]|[0-9]))$", var.management_GUI_client_network))
+    error_message = "Variable [management_GUI_client_network] must be a valid IPv4 network CIDR (e.g. '0.0.0.0/0' for any)."
+  }
+}
+
+//********************** Networking Variables **************************//
+variable "vnet_name" {
+  description = "Virtual Network name."
+  type        = string
+}
+
+variable "existing_vnet_resource_group" {
+  description = "The name of the resource group where the Virtual Network is located. Required when using an existing Virtual Network."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_subnet_name" {
+  description = "The Virtual Network subnet name for the frontend interface."
+  type        = string
+}
+
+variable "backend_subnet_name" {
+  description = "The Virtual Network subnet name for the backend interface."
+  type        = string
+}
+
+variable "address_space" {
+  description = "The address space that is used by a Virtual Network."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "subnet_prefixes" {
+  description = "Address prefix to be used for network subnets."
+  type        = list(string)
+  default     = ["10.0.0.0/24", "10.0.1.0/24"]
+}
+
+variable "frontend_private_ip_host" {
+  description = "Host number in frontend subnet for eth0 private IP."
+  type        = number
+  default     = 4
+}
+
+variable "frontend_private_ip" {
+  description = "Optional explicit private IPv4 address for eth0. If empty, the address is derived from frontend_private_ip_host and the frontend subnet prefix."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.frontend_private_ip == "" || can(cidrhost("${var.frontend_private_ip}/32", 0))
+    error_message = "Variable [frontend_private_ip] must be empty or a valid IPv4 address."
+  }
+}
+
+variable "backend_private_ip_host" {
+  description = "Host number in backend subnet for eth1 private IP."
+  type        = number
+  default     = 4
+}
+
+variable "backend_private_ip" {
+  description = "Optional explicit private IPv4 address for eth1. If empty, the address is derived from backend_private_ip_host and the backend subnet prefix."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.backend_private_ip == "" || can(cidrhost("${var.backend_private_ip}/32", 0))
+    error_message = "Variable [backend_private_ip] must be empty or a valid IPv4 address."
+  }
+}
+
+variable "enable_ipv6" {
+  description = "Enable IPv6 dual-stack networking support."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = var.extended_zone == "None" || !var.enable_ipv6
+    error_message = "Extended zone deployments do not currently support IPv6, so enable_ipv6 must be false when extended_zone is set."
+  }
+}
+
+variable "vnet_ipv6_address_space" {
+  description = "The IPv6 address space that is used by the Virtual Network."
+  type        = string
+  default     = "ace:cab:deca::/48"
+}
+
+variable "subnet_ipv6_prefixes" {
+  description = "IPv6 address prefixes to be used for network subnets."
+  type        = list(string)
+  default     = ["ace:cab:deca:deed::/64", "ace:cab:deca:deee::/64"]
+}
+
+variable "nsg_id" {
+  description = "(Optional) The Network Security Group ID."
+  type        = string
+  default     = ""
+}
+
+variable "storage_account_deployment_mode" {
+  description = "The deployment mode for the storage account. Options are 'New', 'Existing', 'Managed' and 'None'. If 'Existing', the storage account must be specified in the variable 'existing_storage_account_id'."
+  type        = string
+  default     = "New"
+}
+
+variable "storage_account_type" {
+  description = "Storage account type for managed disks. Valid options are Standard_LRS and Premium_LRS."
+  type        = string
+  default     = "Standard_LRS"
+
+  validation {
+    condition     = contains(["Standard_LRS", "Premium_LRS"], var.storage_account_type)
+    error_message = "Variable [storage_account_type] must be one of 'Standard_LRS', 'Premium_LRS'."
+  }
+
+  validation {
+    condition     = var.extended_zone == "None" || var.storage_account_type == "Premium_LRS"
+    error_message = "Extended zone deployments require storage_account_type to be 'Premium_LRS'."
+  }
+}
+
+variable "add_storage_account_ip_rules" {
+  description = "Add Storage Account IP rules that allow access to the Serial Console only for IPs based on their geographic location"
+  type        = bool
+  default     = false
+}
+
+variable "storage_account_additional_ips" {
+  description = "IPs/CIDRs that are allowed access to the Storage Account"
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_storage_account_name" {
+  description = "The name of an existing storage account to use if 'storage_account_deployment_mode' is set to 'Existing'."
+  type        = string
+  default     = ""
+}
+
+variable "existing_storage_account_resource_group_name" {
+  description = "The resource group name of an existing storage account to use if 'storage_account_deployment_mode' is set to 'Existing'."
+  type        = string
+  default     = ""
+}
+
+variable "sku" {
+  description = "SKU"
+  type        = string
+  default     = "Standard"
+}
+
+variable "security_rules" {
+  description = "Security rules for the Network Security Group using this format [name, priority, direction, access, protocol, source_source_port_rangesport_range, destination_port_ranges, source_address_prefix, destination_address_prefix, description]."
+  type        = list(any)
+  default = [
+    {
+      name                       = "AllowAllInBound"
+      priority                   = "100"
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "*"
+      source_port_ranges         = "*"
+      destination_port_ranges    = "*"
+      description                = "Allow all inbound connections"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    }
+  ]
+}

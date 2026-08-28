@@ -1,0 +1,37 @@
+subscription_id    = "00000000-0000-0000-0000-000000000000"
+resource_group_name = "rg-checkpoint-byol-demo"
+prefix              = "cpbyol"
+company_domain      = "example.org"
+
+location        = "westeurope"
+remote_location = "northeurope"
+
+# Replace with the public /32 used by the administrator running SmartConsole.
+management_cidr = "203.0.113.10/32"
+
+checkpoint_os_version = "R82"
+# Check Point mgmt-byol is Gen1, while Dv6 is Gen2-only.
+checkpoint_vm_size = "Standard_D8s_v5" # 8 vCPU / 32 GiB
+workload_vm_size   = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
+collector_vm_size  = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
+
+# Customer-approved policy examples. Names must match Check Point's English
+# Updatable Object and Application Control catalogs.
+blocked_countries    = ["China"]
+blocked_applications = ["P2P File Sharing"]
+blocked_urls         = ["example.com", "httpbin.org/anything/blocked"]
+
+enable_tls_inspection = true
+
+# Disabled by default to avoid exposing a service. When enabled, use a
+# restricted source CIDR; Terraform rejects 0.0.0.0/0.
+enable_inbound_demo      = false
+inbound_demo_source_cidr = ""
+
+log_analytics_retention_days = 90
+immutable_retention_days     = 365
+
+tags = {
+  owner       = "network-security"
+  environment = "demo"
+}
