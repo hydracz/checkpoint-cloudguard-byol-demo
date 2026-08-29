@@ -22,15 +22,17 @@ done
 load_deployment_environment "$VAR_FILE"
 "$TERRAFORM" -chdir="$INFRA" init -backend=false -input=false
 
-args=()
 if [[ -n "$VAR_FILE" ]]; then
-  args+=("-var-file=$VAR_FILE")
+  "$TERRAFORM" -chdir="$INFRA" plan \
+    -input=false \
+    -parallelism="$TF_PARALLELISM" \
+    -out="$LOCAL_DIR/plan.tfplan" \
+    "-var-file=$VAR_FILE"
+else
+  "$TERRAFORM" -chdir="$INFRA" plan \
+    -input=false \
+    -parallelism="$TF_PARALLELISM" \
+    -out="$LOCAL_DIR/plan.tfplan"
 fi
-
-"$TERRAFORM" -chdir="$INFRA" plan \
-  -input=false \
-  -parallelism="$TF_PARALLELISM" \
-  -out="$LOCAL_DIR/plan.tfplan" \
-  "${args[@]}"
 
 echo "Saved reviewed plan to $LOCAL_DIR/plan.tfplan."

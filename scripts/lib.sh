@@ -21,6 +21,36 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+ensure_restricted_ssh_nsg_rule() {
+  local subscription="$1" resource_group="$2" nsg_id="$3" management_cidr="$4"
+  local gateway_nsg_name="${nsg_id##*/}"
+
+  if ! az network nsg rule show \
+    --subscription "$subscription" \
+    --resource-group "$resource_group" \
+    --nsg-name "$gateway_nsg_name" \
+    --name AllowRestrictedSSH \
+    -o none 2>/dev/null; then
+    echo "Restoring the Terraform-managed, source-restricted SSH NSG rule."
+    az network nsg rule create \
+      --subscription "$subscription" \
+      --resource-group "$resource_group" \
+      --nsg-name "$gateway_nsg_name" \
+      --name AllowRestrictedSSH \
+      --priority 100 \
+      --direction Inbound \
+      --access Allow \
+      --protocol Tcp \
+      --source-address-prefixes "$management_cidr" \
+      --source-port-ranges '*' \
+      --destination-address-prefixes '*' \
+      --destination-port-ranges 22 \
+      --description "Restricted SSH access" \
+      --only-show-errors \
+      -o none
+  fi
+}
+
 check_terraform_version() {
   local version major minor
   version="$("$TERRAFORM" version -json | jq -r '.terraform_version')"

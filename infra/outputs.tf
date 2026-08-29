@@ -28,14 +28,29 @@ output "checkpoint_plan" {
   description = "Azure Marketplace BYOL plan used by standalone mode."
 }
 
+output "checkpoint_os_version" {
+  value       = var.checkpoint_os_version
+  description = "Gaia release selected for first-boot configuration."
+}
+
 output "checkpoint_image_id" {
   value       = trimspace(var.checkpoint_image_id) != "" ? trimspace(var.checkpoint_image_id) : null
   description = "Custom managed image or Compute Gallery image ID. Null means the Marketplace image is used."
 }
 
+output "checkpoint_image_requires_plan" {
+  value       = local.checkpoint_source_requires_plan
+  description = "Whether the selected VM image request includes a Marketplace purchase plan."
+}
+
 output "checkpoint_vm_name" {
   value       = module.checkpoint.vm_name
   description = "Check Point standalone VM name."
+}
+
+output "checkpoint_nsg_id" {
+  value       = module.checkpoint.nsg_id
+  description = "Gateway Network Security Group resource ID."
 }
 
 output "checkpoint_gateway_name" {

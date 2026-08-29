@@ -21,8 +21,10 @@ output_value() {
 SUBSCRIPTION="$(output_value subscription_id)"
 MANAGEMENT_CIDR="$(output_value management_cidr)"
 COMPANY_DOMAIN="$(output_value company_domain)"
+CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 RG="$(output_value resource_group_name)"
 GATEWAY_VM="$(output_value checkpoint_vm_name)"
+GATEWAY_NSG_ID="$(output_value checkpoint_nsg_id)"
 GATEWAY_NAME="$(output_value checkpoint_gateway_name)"
 PACKAGE_NAME="$(output_value policy_package_name)"
 FRONTEND_IP="$(output_value checkpoint_frontend_private_ip)"
@@ -59,10 +61,20 @@ policy_args=(
   "$PUBLIC_IP"
   "$MANAGEMENT_CIDR"
   "$COMPANY_DOMAIN"
+  "$CHECKPOINT_RELEASE"
 )
 
 transport="${CHECKPOINT_TRANSPORT:-auto}"
 ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$HOME/.ssh/id_ed25519}"
+ssh_wait_seconds="${CHECKPOINT_SSH_WAIT_SECONDS:-1800}"
+ssh_retry_seconds="${CHECKPOINT_SSH_RETRY_SECONDS:-30}"
+reconcile_ssh_rule="${CHECKPOINT_RECONCILE_SSH_RULE:-false}"
+[[ "$ssh_wait_seconds" =~ ^[0-9]+$ ]] ||
+  die "CHECKPOINT_SSH_WAIT_SECONDS must be a non-negative integer."
+[[ "$ssh_retry_seconds" =~ ^[1-9][0-9]*$ ]] ||
+  die "CHECKPOINT_SSH_RETRY_SECONDS must be a positive integer."
+[[ "$reconcile_ssh_rule" == "true" || "$reconcile_ssh_rule" == "false" ]] ||
+  die "CHECKPOINT_RECONCILE_SSH_RULE must be true or false."
 ssh_options=(
   -i "$ssh_key"
   -o ConnectTimeout=15
@@ -72,13 +84,42 @@ ssh_options=(
 )
 
 use_ssh=false
-if [[ "$transport" == "ssh" ]]; then
-  use_ssh=true
-elif [[ "$transport" == "auto" && -f "$ssh_key" ]] &&
-  ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" true >/dev/null 2>&1; then
-  use_ssh=true
-elif [[ "$transport" != "auto" && "$transport" != "run-command" ]]; then
+if [[ "$transport" != "auto" && "$transport" != "ssh" && "$transport" != "run-command" ]]; then
   die "CHECKPOINT_TRANSPORT must be auto, ssh, or run-command."
+fi
+if [[ "$transport" == "ssh" && ! -f "$ssh_key" ]]; then
+  die "CHECKPOINT_TRANSPORT=ssh requires private key $ssh_key."
+fi
+
+if [[ "$transport" != "run-command" && "$reconcile_ssh_rule" == "true" ]]; then
+  ensure_restricted_ssh_nsg_rule "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDR"
+fi
+
+if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
+  echo "Waiting up to ${ssh_wait_seconds}s for the Management API over restricted Gaia SSH..."
+  ssh_deadline=$((SECONDS + ssh_wait_seconds))
+  while true; do
+    if ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" \
+      'command -v mgmt_cli >/dev/null &&
+       command -v cp_log_export >/dev/null &&
+       timeout 30 mgmt_cli -r true show packages limit 1 --format json >/dev/null 2>&1' \
+      >/dev/null 2>&1; then
+      use_ssh=true
+      break
+    fi
+    ((SECONDS >= ssh_deadline)) && break
+    if [[ "$reconcile_ssh_rule" == "true" ]]; then
+      ensure_restricted_ssh_nsg_rule "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDR"
+    fi
+    sleep "$ssh_retry_seconds"
+  done
+fi
+
+if [[ "$transport" == "ssh" ]] && ! $use_ssh; then
+  die "The Gaia Management API did not become ready over SSH within ${ssh_wait_seconds}s."
+fi
+if [[ "$transport" == "auto" ]] && ! $use_ssh; then
+  echo "The Management API was unavailable over SSH; falling back to Azure VM Run Command."
 fi
 
 if $use_ssh; then
@@ -129,4 +170,8 @@ if [[ "$TLS_ENABLED" == "true" ]]; then
   done
 fi
 
-echo "Check Point L4/L7, Geo, TLS, routing policy, and Log Exporter configuration completed."
+if [[ "$TLS_ENABLED" == "true" ]]; then
+  echo "Check Point L4/L7, Geo, TLS, routing policy, and Log Exporter configuration completed."
+else
+  echo "Check Point L4/L7, Geo, routing policy, and Log Exporter configuration completed; TLS inspection is disabled."
+fi

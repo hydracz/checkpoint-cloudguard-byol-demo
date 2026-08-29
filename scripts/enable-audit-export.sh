@@ -76,11 +76,11 @@ if ! "$TERRAFORM" -chdir="$INFRA" state list 2>/dev/null |
   $table_ready || die "Syslog table was not queryable after 15 minutes; continuous export was not created."
 
   printf '{"enable_log_data_export":true}\n' >"$AUTO_VARS"
-  plan_args=()
   if [[ -n "$VAR_FILE" ]]; then
-    plan_args+=(--var-file "$VAR_FILE")
+    "$ROOT/scripts/plan.sh" --var-file "$VAR_FILE"
+  else
+    "$ROOT/scripts/plan.sh"
   fi
-  "$ROOT/scripts/plan.sh" "${plan_args[@]}"
   "$TERRAFORM" -chdir="$INFRA" apply -input=false -auto-approve -parallelism="$TF_PARALLELISM" "$LOCAL_DIR/plan.tfplan"
 else
   printf '{"enable_log_data_export":true}\n' >"$AUTO_VARS"

@@ -1,10 +1,13 @@
 locals {
   checkpoint_offer = {
+    R81   = "cgi-mgmt-r81"
     R82   = "check-point-cg-r82"
     R8210 = "check-point-cg-r8210"
   }[var.checkpoint_os_version]
 
   checkpoint_plan = "mgmt-byol"
+
+  checkpoint_source_requires_plan = trimspace(var.checkpoint_image_id) == "" || var.checkpoint_image_requires_plan
 
   gateway_frontend_ip = cidrhost(var.checkpoint_frontend_subnet_prefix, 4)
   gateway_backend_ip  = cidrhost(var.checkpoint_backend_subnet_prefix, 4)

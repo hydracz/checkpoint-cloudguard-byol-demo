@@ -85,3 +85,12 @@ image、Azure Compute Gallery image definition 或 image version ID。
 `source_image_requires_plan` 明确区分普通开发镜像与 Marketplace 派生镜像。后者部署
 VM 时继续传入原始 Publisher、Offer 和 Plan，不能借 custom image 绕过 Marketplace
 条款。`source_image_id` 与 `source_image_vhd_uri` 互斥。
+
+## Patch 6：允许 R81 无 Plan custom image 参数
+
+涉及文件：`modules/common/common/variables.tf`
+
+上游 Global Marketplace 列表从 R81.10 开始，不接受 Azure China 的
+`R81`/`cgi-mgmt-r81` 参数。根 module 只在显式选择无 Plan custom image 时允许
+R81；本地校验同步接受这两个值，使相同的 `cloud-init` 首次配置参数能传给 R81
+镜像。该 patch 不新增 R81 Global Marketplace 部署路径。

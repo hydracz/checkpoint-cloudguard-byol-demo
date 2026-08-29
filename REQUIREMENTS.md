@@ -22,7 +22,7 @@
 | R5 | `cp_log_export status` 显示 `azure-monitor` 为 `Running`；EU Log Analytics `Syslog` 表出现 Check Point 记录。 |
 | R6 | `Syslog` 表持续导出到同区域 Storage 的 `am-syslog` 容器；Immutability Policy 不少于 30 天。 |
 | R7 | 执行 `lock-worm.sh --yes` 后，Immutability Policy 显示 `Locked`。`Unlocked` 状态不表示已满足不可篡改要求。 |
-| R8 | Marketplace `publisher`、`offer`、`plan` 分别为 `checkpoint`、所选 R82/R82.10 offer、`mgmt-byol`。 |
+| R8 | 默认 Marketplace 路径的 `publisher`、`offer`、`plan` 分别为 `checkpoint`、所选 R82/R82.10 offer、`mgmt-byol`；custom image 必须保留可审计来源，并按来源正确保留 Plan，或明确记录为已获授权的 R81 无 Plan 镜像。 |
 
 ## 必须由客户提供或确认的内容
 

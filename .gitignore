@@ -12,9 +12,9 @@ configs/*.tfvars
 *.p12
 *.key
 
-# VM image artifacts are large and must never be committed.
+# Private VM image archives, manifests, and runbooks must never be committed.
 *.vhd
 *.vhd.*
 *.vhdx
 *.vhdx.*
-cloudguard-images/
+/cloudguard-images/

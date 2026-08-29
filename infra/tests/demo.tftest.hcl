@@ -19,14 +19,17 @@ run "default_demo_plan" {
   command = plan
 
   variables {
-    subscription_id      = "00000000-0000-0000-0000-000000000000"
-    tenant_id            = "00000000-0000-0000-0000-000000000000"
-    client_id            = "00000000-0000-0000-0000-000000000000"
-    client_secret        = "validation-only"
-    management_cidr      = "203.0.113.10/32"
-    admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
-    sic_key              = "validation-only-sic-key"
-    checkpoint_image_id  = ""
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
   }
 
   assert {
@@ -61,6 +64,11 @@ run "default_demo_plan" {
   }
 
   assert {
+    condition     = local.checkpoint_source_requires_plan
+    error_message = "The default Marketplace source must require its purchase plan."
+  }
+
+  assert {
     condition = alltrue([
       azurerm_virtual_network_peering.eu_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
       azurerm_virtual_network_peering.remote_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
@@ -73,14 +81,17 @@ run "custom_image_plan" {
   command = plan
 
   variables {
-    subscription_id      = "00000000-0000-0000-0000-000000000000"
-    tenant_id            = "00000000-0000-0000-0000-000000000000"
-    client_id            = "00000000-0000-0000-0000-000000000000"
-    client_secret        = "validation-only"
-    management_cidr      = "203.0.113.10/32"
-    admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
-    sic_key              = "validation-only-sic-key"
-    checkpoint_image_id  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r82-byol/versions/1.0.0"
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r82-byol/versions/1.0.0"
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
   }
 
   assert {
@@ -89,23 +100,111 @@ run "custom_image_plan" {
   }
 
   assert {
-    condition     = local.checkpoint_plan == "mgmt-byol"
+    condition     = local.checkpoint_source_requires_plan && local.checkpoint_plan == "mgmt-byol"
     error_message = "Marketplace-derived custom images must retain the mgmt-byol plan."
   }
+}
+
+run "custom_image_without_plan" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R81"
+    checkpoint_image_id            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r81-planless/versions/1.0.0"
+    checkpoint_image_requires_plan = false
+    enable_log_data_export         = false
+    enable_tls_inspection          = false
+  }
+
+  assert {
+    condition     = var.checkpoint_os_version == "R81" && var.checkpoint_image_id != "" && !local.checkpoint_source_requires_plan
+    error_message = "An explicitly planless custom image must not add Marketplace plan metadata."
+  }
+}
+
+run "invalid_r82_planless_custom_image" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r82-planless/versions/1.0.0"
+    checkpoint_image_requires_plan = false
+    enable_log_data_export         = false
+  }
+
+  expect_failures = [var.checkpoint_os_version]
+}
+
+run "invalid_r81_tls_automation" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R81"
+    checkpoint_image_id            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r81-planless/versions/1.0.0"
+    checkpoint_image_requires_plan = false
+    enable_log_data_export         = false
+    enable_tls_inspection          = true
+  }
+
+  expect_failures = [var.enable_tls_inspection]
+}
+
+run "invalid_r81_marketplace_source" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R81"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+  }
+
+  expect_failures = [var.checkpoint_os_version]
 }
 
 run "invalid_custom_image_id" {
   command = plan
 
   variables {
-    subscription_id      = "00000000-0000-0000-0000-000000000000"
-    tenant_id            = "00000000-0000-0000-0000-000000000000"
-    client_id            = "00000000-0000-0000-0000-000000000000"
-    client_secret        = "validation-only"
-    management_cidr      = "203.0.113.10/32"
-    admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
-    sic_key              = "validation-only-sic-key"
-    checkpoint_image_id  = "not-an-azure-resource-id"
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = "not-an-azure-resource-id"
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
   }
 
   expect_failures = [var.checkpoint_image_id]
@@ -115,16 +214,19 @@ run "restricted_inbound_plan" {
   command = plan
 
   variables {
-    subscription_id          = "00000000-0000-0000-0000-000000000000"
-    tenant_id                = "00000000-0000-0000-0000-000000000000"
-    client_id                = "00000000-0000-0000-0000-000000000000"
-    client_secret            = "validation-only"
-    management_cidr          = "203.0.113.10/32"
-    admin_ssh_public_key     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
-    sic_key                  = "validation-only-sic-key"
-    checkpoint_image_id      = ""
-    enable_inbound_demo      = true
-    inbound_demo_source_cidr = "198.51.100.10/32"
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_inbound_demo            = true
+    inbound_demo_source_cidr       = "198.51.100.10/32"
+    enable_log_data_export         = false
   }
 
   assert {
@@ -148,15 +250,17 @@ run "audit_export_plan" {
   command = plan
 
   variables {
-    subscription_id        = "00000000-0000-0000-0000-000000000000"
-    tenant_id              = "00000000-0000-0000-0000-000000000000"
-    client_id              = "00000000-0000-0000-0000-000000000000"
-    client_secret          = "validation-only"
-    management_cidr        = "203.0.113.10/32"
-    admin_ssh_public_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
-    sic_key                = "validation-only-sic-key"
-    checkpoint_image_id    = ""
-    enable_log_data_export = true
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = true
   }
 
   assert {

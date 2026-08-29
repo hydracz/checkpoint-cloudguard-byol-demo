@@ -24,10 +24,16 @@ RG="$(terraform_output_raw resource_group_name)"
 [[ "${CONFIRM_DESTROY:-}" == "$RG" ]] ||
   die "Set CONFIRM_DESTROY=$RG to confirm destruction."
 
-args=()
 if [[ -n "$VAR_FILE" ]]; then
-  args+=("-var-file=$VAR_FILE")
+  "$TERRAFORM" -chdir="$INFRA" destroy \
+    -input=false \
+    -auto-approve \
+    -parallelism="$TF_PARALLELISM" \
+    "-var-file=$VAR_FILE"
+else
+  "$TERRAFORM" -chdir="$INFRA" destroy \
+    -input=false \
+    -auto-approve \
+    -parallelism="$TF_PARALLELISM"
 fi
-
-"$TERRAFORM" -chdir="$INFRA" destroy -input=false -auto-approve -parallelism="$TF_PARALLELISM" "${args[@]}"
 echo "Terraform destroy completed for $RG. A locked WORM policy can intentionally prevent storage deletion until retention expires."

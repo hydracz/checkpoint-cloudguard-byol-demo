@@ -120,13 +120,20 @@ variable "sic_key" {
 }
 
 variable "checkpoint_os_version" {
-  description = "Check Point Gaia release deployed from Azure Marketplace."
+  description = "Check Point Gaia release. R81 is supported only with an explicitly planless custom image."
   type        = string
   default     = "R82"
 
   validation {
-    condition     = contains(["R82", "R8210"], var.checkpoint_os_version)
-    error_message = "checkpoint_os_version must be R82 or R8210."
+    condition = (
+      contains(["R81", "R82", "R8210"], var.checkpoint_os_version) &&
+      (
+        var.checkpoint_os_version == "R81" ?
+        (trimspace(var.checkpoint_image_id) != "" && !var.checkpoint_image_requires_plan) :
+        (trimspace(var.checkpoint_image_id) == "" || var.checkpoint_image_requires_plan)
+      )
+    )
+    error_message = "R81 requires a non-empty planless custom image; R82/R8210 custom images must retain their Marketplace plan."
   }
 }
 
@@ -145,6 +152,12 @@ variable "checkpoint_image_id" {
     )
     error_message = "checkpoint_image_id must be empty or a managed image, Compute Gallery image definition, or Compute Gallery image version resource ID."
   }
+}
+
+variable "checkpoint_image_requires_plan" {
+  description = "Whether checkpoint_image_id requires the Check Point Marketplace purchase plan. R81 must be false; R82/R8210 custom images must be true."
+  type        = bool
+  default     = true
 }
 
 variable "checkpoint_vm_size" {
@@ -277,6 +290,11 @@ variable "enable_tls_inspection" {
   description = "Generate a demo outbound CA, install HTTPS inspection policy, and trust the public CA on both demo workloads."
   type        = bool
   default     = true
+
+  validation {
+    condition     = var.checkpoint_os_version != "R81" || !var.enable_tls_inspection
+    error_message = "R81 Management API 1.7 cannot automate the outbound HTTPS Inspection CA or gateway setting. Set enable_tls_inspection=false, or use R82/R8210 for automated TLS inspection."
+  }
 }
 
 variable "enable_inbound_demo" {

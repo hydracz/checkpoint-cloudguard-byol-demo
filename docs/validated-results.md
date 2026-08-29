@@ -1,7 +1,8 @@
 # 现场验证记录与复查方法
 
-本文记录 2026-08-28 在一个 Azure 学习订阅中的观察结果。区域容量、许可证状态和
-Azure Policy 会随订阅与时间变化；这些记录不表示客户环境当前具有相同状态。
+本文记录 2026-08-28 到 2026-08-29 UTC（UTC+8 为 2026-08-30）在一个 Azure
+学习订阅中的观察结果。区域容量、许可证状态和 Azure Policy 会随订阅与时间变化；
+这些记录不表示客户环境当前具有相同状态。
 
 ## 现场环境
 
@@ -119,6 +120,94 @@ policy 进程，Management API 本身正常。随后使用受 `management_cidr` 
 执行同一幂等 policy 脚本，全部功能测试通过。仓库默认的
 `CHECKPOINT_TRANSPORT=auto` 会优先使用 SSH，因此不要为 custom image 强制设为
 `run-command`，除非已在目标 image/区域验证该 extension 路径。
+
+## R81 无 Plan VHD 完整端到端验证
+
+2026-08-29 UTC 使用本地 R81 固定 VHD 归档重新执行“上传 → Gallery image →
+完整 Demo 部署 → 策略/流量/日志测试”。真实 subscription 和资源 ID 没有写入仓库。
+
+### 镜像发布
+
+| 项目 | 实测结果 |
+| --- | --- |
+| 源归档 | 单一固定 VHD，`107374182912` bytes，`conectix` footer |
+| 归档 SHA-256 | `c808277a2a4f30c94510be212f7a76bedd5b320aef61df92189cb2d738f82aef` |
+| Direct Upload | AzCopy 传输 `107374182912` bytes，1/1 完成 |
+| Gallery version | `cloudguard-r81-planless/81.392.710` |
+| Definition | Linux、Generalized、x64、Hyper-V V1、`purchasePlan=null` |
+| 副本 | Southeast Asia 和 North Europe 均为 `Completed` |
+| 可重复执行 | 再次运行发布脚本只校验 SHA、metadata 和目标副本并返回既有 version |
+
+发布脚本给 definition/version 写入 `checkpoint-release=R81` 和
+`marketplace-plan-required=false` 标签。R82 有 Plan definition 同时保留在同一
+Gallery；两个 definition 可并存。
+
+### 部署与 Guest 验证
+
+| 检查项 | 实测结果 |
+| --- | --- |
+| VM image reference | 精确 version `81.392.710` |
+| VM purchase plan | `null` |
+| VM SKU | `Standard_F16s`，Gen1，16 vCPU/32 GiB |
+| Gaia | Check Point Gaia R81，OS build 392，64-bit |
+| Management API | 1.7 |
+| 首次启动 | `config_system` 完成并重启，之后 Management API Ready |
+| 策略 | L4、Application Control、URL Filtering、双向 Geo、东西向 No-NAT 和公网 Hide NAT 安装成功 |
+| 审计 | Log Exporter Running、Log Analytics 摄取、Continuous Export 和 365 天未锁定 Immutability Policy 均成功 |
+| Terraform 收敛 | 审计 export 创建后，无业务基础设施变更 |
+
+R81 首次启动时 SSH 已可连接但 `config_system` 仍在安装 Management/Log Exporter
+组件。脚本现在同时等待 SSH、Management API 和 `cp_log_export`，避免把“端口已开”
+误判为“产品已就绪”。
+
+R81 与 R82 的公开 API 能力并不完全相同，现场发现并修复了以下差异：
+
+| R81 差异 | 脚本处理 |
+| --- | --- |
+| 不支持 `nat-hide-internal-interfaces` | 使用跨版本的显式东西向 No-NAT + 公网 Hide NAT rules |
+| NAT rulebase 响应省略 rule name | 按已知 rule name 调用 `show/delete nat-rule`，保证幂等 |
+| Gaia 内置旧 `jq` 对非字符串 `startswith` 会退出 | 先转成字符串；不依赖 R81 不支持的 `@tsv` |
+| 普通 custom URL pattern 未按 R82 方式命中 | R81 使用转义正则；纯域名另建 DNS Domain Drop rule |
+| API 1.7 无 Outbound Inspection CA/Gateway HTTPS Inspection 写接口 | R81 自动化要求关闭 TLS；不使用未支持的 `dbedit` 或私有 API |
+| 订阅自动删除 `/32` SSH NSG rule | 客户确认后可显式启用 `CHECKPOINT_RECONCILE_SSH_RULE=true` 恢复同一受限 rule |
+
+### 测试矩阵
+
+最终证据目录：`evidence/20260829T183504Z/`（gitignored）。
+
+```text
+T01-T02  effective routes                           PASS
+T03      cross-region east-west TCP/8080           PASS
+T04      allowed HTTPS                             PASS
+T05      blocked domain                            PASS
+T06      blocked HTTP URL path                     PASS
+T07      HTTPS Inspection issuer                   SKIP
+T08      Management API rulebase                   PASS
+T09      Log Exporter                              PASS
+T10      Log Analytics ingestion                   PASS
+T11      Immutability Policy                       PASS
+T12      approved Azure regions                    PASS
+T13      optional inbound DNAT                     SKIP
+T14      exact image reference and null Plan       PASS
+T15      Gaia release                              PASS
+T16      east-west source IP preservation          PASS
+```
+
+T13 仍因默认 `enable_inbound_demo=false` 而跳过。T07 是 R81 的明确产品/API
+边界，不是误报为成功：R81 GA Management API 1.7 无法用仓库支持的公开接口创建
+Outbound Inspection CA 或启用 Gateway HTTPS Inspection。关闭 TLS 时，T06 改用
+HTTP path 继续验证 URL Filtering。需要自动执行并验证 TLS 解密时，继续使用已验证的
+R82/R82.10 路径。
+
+最终结论是：镜像发布、Plan 选择、首次启动、L4/L7（不含 R81 自动 TLS 解密）、
+Geo、跨区域路由、日志和 WORM 脚本均可按版本适配；R81 与 R82 **不是完整功能等价**。
+两条 preflight 均通过，Terraform mock/full-module 测试为 `10 passed, 0 failed`。
+最终矩阵为 14 项 `PASS`、2 项预期 `SKIP`；T16 在远端 workload journal 中观察到
+原始主 workload IP，确认东西向流量没有被公网 Hide NAT 改写。
+
+测试完成后，4 台 R81 Demo VM 均已 deallocated；Direct Upload 的临时 managed
+image 和 upload disk 已删除。R81 Gallery version 及其两个已完成副本保留，便于后续
+重复部署。WORM policy 仍为 `Unlocked`，未执行不可逆锁定。
 
 ## 数据路径观察记录
 

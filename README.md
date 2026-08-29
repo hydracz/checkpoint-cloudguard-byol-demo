@@ -162,19 +162,30 @@ collector_vm_size  = "Standard_D4ls_v6"
 | `company_domain` | 否 | string | `example.org` | 演示 HTTPS Inspection CA 的 `issued-by`；可填写客户批准的公司域名 |
 | `location` | 否 | string | `westeurope` | Hub、Check Point、主工作负载和日志资源所在区域 |
 | `remote_location` | 否 | string | `northeurope` | 远端工作负载所在区域，必须与 `location` 不同 |
+| `checkpoint_os_version` | 否 | string | `R82` | Gaia 版本；`R81` 仅允许与无 Plan 自定义镜像一起使用 |
 | `checkpoint_image_id` | 否 | string | `""` | generalized managed image、Compute Gallery image definition 或 version ID；空值使用 Marketplace |
+| `checkpoint_image_requires_plan` | 否 | bool | `true` | 自定义镜像是否需要 Check Point Marketplace plan；仅对非空 `checkpoint_image_id` 生效 |
 | `checkpoint_vm_size` | 否 | string | `Standard_D8s_v5` | Check Point VM 规格；受镜像代际和实时容量限制 |
 | `workload_vm_size` | 否 | string | `Standard_D4ls_v6` | 两台工作负载 VM 的规格 |
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
 | `blocked_countries` | 否 | list(string) | `["China"]` | Check Point Repository 中的英文国家名 |
-| `enable_tls_inspection` | 否 | bool | `true` | 是否创建演示 CA 和 HTTPS Inspection 规则 |
+| `enable_tls_inspection` | 否 | bool | `true` | 是否创建演示 CA 和 HTTPS Inspection 规则；R81 自动化必须为 `false` |
 
 不同客户只需修改 `tfvars` 中的订阅、网络、命名和策略参数，不需要修改 Terraform 源码。
 
 ### 使用自定义 Check Point 镜像
 
+同一套 Terraform 和部署脚本支持以下三种模式：
+
+| 镜像模式 | `checkpoint_os_version` | `checkpoint_image_id` | `checkpoint_image_requires_plan` |
+| --- | --- | --- | ---: |
+| 默认 Azure Global Marketplace R82/R82.10 | `R82`/`R8210` | 空 | 忽略（请求始终带 Plan） |
+| Marketplace 派生 R82/R82.10 custom image | 与镜像一致 | 精确 definition/version ID | `true` |
+| 已获授权的 R81 无 Plan custom image | `R81` | 精确 definition/version ID | `false`；另设 `enable_tls_inspection=false` |
+
 ```hcl
-checkpoint_image_id = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG>/providers/Microsoft.Compute/galleries/<GALLERY>/images/<DEFINITION>/versions/<VERSION>"
+checkpoint_image_id            = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG>/providers/Microsoft.Compute/galleries/<GALLERY>/images/<DEFINITION>/versions/<VERSION>"
+checkpoint_image_requires_plan = true
 ```
 
 自定义镜像必须满足以下条件：
@@ -184,6 +195,15 @@ checkpoint_image_id = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG
    `checkpoint:check-point-cg-r82:mgmt-byol` purchase plan。部署脚本仍会接受
    Marketplace 条款并把 plan 写入 VM；该方式不能绕过客户订阅的 Marketplace
    Policy、条款或商务市场限制。
+   本仓库只允许 Check Point 明确提供或授权、且 Gallery definition 的
+   `purchasePlan` 为空的 R81 镜像设置
+   `checkpoint_image_requires_plan = false`。R82/R82.10 custom image 必须保留原始
+   Plan。该开关只控制 VM 请求，不会移除 Azure 已识别的 Marketplace 来源。
+   使用无 Plan R81 镜像时，同时设置 `checkpoint_os_version = "R81"` 和
+   `enable_tls_inspection = false`。R81 GA 的 Management API 1.7 没有自动创建
+   Outbound Inspection CA 或设置 Gateway HTTPS Inspection 的公开命令；脚本不使用
+   未支持的 `dbedit`/私有 API 修改证书数据库。R82/R82.10 继续执行完整自动 TLS
+   Inspection 流程。
 3. 只能从**未启动的 Marketplace 基础镜像**或 Check Point 明确支持的 generalized
    VHD 创建。不要捕获已配置网关：specialized image 会保留 hostname、用户、
    SSH keys、证书、SIC/管理状态、许可证状态和日志。
@@ -201,6 +221,9 @@ checkpoint_image_id = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG
 [CloudGuard Marketplace 镜像导出与 Custom Image Runbook](docs/cloudguard-image-export.md)。
 如果已经持有本地 `tar.gz`，可选阅读
 [从本地 tar.gz 发布 Azure Compute Gallery 镜像](docs/upload-vhd-to-compute-gallery.md)。
+仓库的 `scripts/publish-vhd-image.sh` 可把固定 VHD 归档通过 Managed Disk Direct
+Upload 发布为 Gallery version；R81 无 Plan 与 R82 有 Plan 使用同一脚本，只是
+R82 额外传入三项 `--plan-*` 参数。
 
 ### 3. 准备 SSH key
 
@@ -254,18 +277,25 @@ export ARM_CLIENT_SECRET="<CLIENT_SECRET>"
 ./scripts/deploy.sh --var-file configs/demo.tfvars
 ```
 
-脚本先执行预检并接受 `mgmt-byol` Marketplace 条款，再应用基础设施
-Terraform plan。Check Point Management API 可用后，脚本写入策略和 Log
-Exporter，并把演示 Outbound CA 公钥安装到两台工作负载 VM。
+脚本先执行预检；默认 Marketplace 或有 Plan custom image 会接受 `mgmt-byol`
+条款，无 Plan custom image 不发出 terms/Plan 请求。之后脚本应用基础设施
+Terraform plan。Check Point Management API 可用后，脚本写入策略和 Log Exporter，
+并把演示 Outbound CA 公钥安装到两台工作负载 VM。
 
 日志导出分为两个 Terraform 阶段。脚本先向日志收集 VM 写入一条 bootstrap
 syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Export。
 这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 只写入权限为
 `0600` 的 `.local/deployment-secrets.env`。
 
-策略配置默认 `CHECKPOINT_TRANSPORT=auto`：如果 `management_cidr` 允许当前执行器且
-私钥可用，则通过受限 SSH 登录 Gaia `admin`；否则回退到 Azure Run Command。
-也可显式设置 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
+策略配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过受限 Gaia SSH 等待
+Management API 和 Log Exporter 命令最多 30 分钟，避免首次启动尚在安装组件时过早
+执行策略或回退到不稳定的 Run Command；超时后才回退。
+可用 `CHECKPOINT_SSH_WAIT_SECONDS` 调整等待时间，也可显式设置
+`CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
+若订阅自动删除 Terraform 创建的 `/32` SSH NSG rule，可在确认符合客户 Azure
+Policy 后显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只恢复相同
+`management_cidr` 的 Terraform-managed rule，不会创建开放来源。该开关同时用于
+策略配置和 T08/T09/T15 现场检查。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
 
@@ -324,8 +354,12 @@ terraform -chdir=infra output
 | T11 | Immutability Policy 的保留天数与 Terraform 输出一致 |
 | T12 | 资源位置只包含批准的 EU region 或 `global` |
 | T13 | 启用 DNAT 时返回主工作负载页面；未启用时记录 `SKIP` |
+| T14 | VM image reference 与精确 custom image ID、Plan 模式一致 |
+| T15 | Guest Gaia 版本与 `checkpoint_os_version` 一致 |
+| T16 | 跨 Spoke 请求到达远端时保留原 workload 源地址 |
 
-`SKIP` 表示该功能未启用；`PENDING_INGESTION` 表示 Azure Monitor 尚未完成日志摄取。
+`SKIP` 表示该功能未启用。脚本默认等待 Log Analytics 摄取最多 30 分钟；
+`PENDING_INGESTION` 或任何 `FAIL` 都会让命令返回非零。
 
 ### 3. 查询日志
 

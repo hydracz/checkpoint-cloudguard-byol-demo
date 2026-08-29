@@ -35,11 +35,16 @@ case "$CASE_ID" in
     fi
     ;;
   T06)
-    allowed_code="$(curl -sS -o /tmp/checkpoint-demo-url-allow.out -w '%{http_code}' --connect-timeout 10 --max-time 30 "https://httpbin.org/anything/allowed" || true)"
-    blocked_code="$(curl -sS -o /tmp/checkpoint-demo-url-block.out -w '%{http_code}' --connect-timeout 10 --max-time 30 "https://httpbin.org/anything/blocked" || true)"
+    scheme="https"
+    [[ "$TLS_ENABLED" == "true" ]] || scheme="http"
+    allowed_url="${scheme}://httpbin.org/anything/allowed"
+    blocked_url="${scheme}://httpbin.org/anything/blocked"
+    rm -f /tmp/checkpoint-demo-url-allow.out /tmp/checkpoint-demo-url-block.out
+    allowed_code="$(curl -sS -o /tmp/checkpoint-demo-url-allow.out -w '%{http_code}' --connect-timeout 10 --max-time 30 "$allowed_url" || true)"
+    blocked_code="$(curl -sS -o /tmp/checkpoint-demo-url-block.out -w '%{http_code}' --connect-timeout 10 --max-time 30 "$blocked_url" || true)"
     if [[ "$allowed_code" == "200" ]] &&
-      grep -q '"url": "https://httpbin.org/anything/allowed"' /tmp/checkpoint-demo-url-allow.out &&
-      ! grep -q '"url": "https://httpbin.org/anything/blocked"' /tmp/checkpoint-demo-url-block.out; then
+      grep -Fq "\"url\": \"$allowed_url\"" /tmp/checkpoint-demo-url-allow.out &&
+      ! grep -Fq "\"url\": \"$blocked_url\"" /tmp/checkpoint-demo-url-block.out 2>/dev/null; then
       result PASS
     else
       printf 'allowed=%s blocked=%s\n' "$allowed_code" "$blocked_code"

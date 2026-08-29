@@ -40,25 +40,33 @@ else
   rm -f "$audit_auto_vars"
 fi
 
-var_args=()
 if [[ -n "$VAR_FILE" ]]; then
-  var_args+=(--var-file "$VAR_FILE")
+  "$ROOT/scripts/preflight.sh" --var-file "$VAR_FILE"
+else
+  "$ROOT/scripts/preflight.sh"
 fi
-
-"$ROOT/scripts/preflight.sh" "${var_args[@]}"
 
 offer="$(terraform_console_value local.checkpoint_offer "$VAR_FILE")"
 plan="$(terraform_console_value local.checkpoint_plan "$VAR_FILE")"
-echo "Accepting Azure Marketplace terms for checkpoint:$offer:$plan..."
-az vm image terms accept \
-  --publisher checkpoint \
-  --offer "$offer" \
-  --plan "$plan" \
-  --subscription "$TARGET_SUBSCRIPTION_ID" \
-  --only-show-errors \
-  -o none
+source_requires_plan="$(terraform_console_value local.checkpoint_source_requires_plan "$VAR_FILE")"
+if [[ "$source_requires_plan" == "true" ]]; then
+  echo "Accepting Azure Marketplace terms for checkpoint:$offer:$plan..."
+  az vm image terms accept \
+    --publisher checkpoint \
+    --offer "$offer" \
+    --plan "$plan" \
+    --subscription "$TARGET_SUBSCRIPTION_ID" \
+    --only-show-errors \
+    -o none
+else
+  echo "Using a custom image without Marketplace purchase plan metadata."
+fi
 
-"$ROOT/scripts/plan.sh" "${var_args[@]}"
+if [[ -n "$VAR_FILE" ]]; then
+  "$ROOT/scripts/plan.sh" --var-file "$VAR_FILE"
+else
+  "$ROOT/scripts/plan.sh"
+fi
 "$TERRAFORM" -chdir="$INFRA" apply -input=false -auto-approve -parallelism="$TF_PARALLELISM" "$LOCAL_DIR/plan.tfplan"
 "$TERRAFORM" -chdir="$INFRA" output -json >"$LOCAL_DIR/latest-deployment-outputs.json"
 
@@ -66,7 +74,11 @@ if ! $SKIP_POLICY; then
   "$ROOT/scripts/configure-policy.sh"
 fi
 
-"$ROOT/scripts/enable-audit-export.sh" "${var_args[@]}"
+if [[ -n "$VAR_FILE" ]]; then
+  "$ROOT/scripts/enable-audit-export.sh" --var-file "$VAR_FILE"
+else
+  "$ROOT/scripts/enable-audit-export.sh"
+fi
 
 if $LOCK_WORM; then
   "$ROOT/scripts/lock-worm.sh" --yes

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 17 ]]; then
-  echo "Expected 17 arguments; received $#." >&2
+if [[ $# -ne 18 ]]; then
+  echo "Expected 18 arguments; received $#." >&2
   exit 2
 fi
 
@@ -23,6 +23,7 @@ INBOUND_SOURCE_CIDR="${14}"
 PUBLIC_IP="${15}"
 MANAGEMENT_CIDR="${16}"
 COMPANY_DOMAIN="${17}"
+CHECKPOINT_RELEASE="${18}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
@@ -43,6 +44,27 @@ require_command() {
   }
 }
 
+refresh_checkpoint_path() {
+  local directory
+  for directory in /opt/CPshrd-*/bin /opt/CPrt-*/bin /opt/CPsuite-*/fw1/bin; do
+    [[ -d "$directory" ]] && PATH="$directory:$PATH"
+  done
+  export PATH
+}
+
+wait_for_command() {
+  local command="$1"
+  for attempt in $(seq 1 60); do
+    refresh_checkpoint_path
+    if command -v "$command" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 30
+  done
+  echo "Required Check Point command did not appear within 30 minutes: $command" >&2
+  exit 1
+}
+
 log() {
   printf '[checkpoint-policy] %s\n' "$*" >&2
 }
@@ -51,13 +73,13 @@ decode_json() {
   printf '%s' "$1" | base64 -d
 }
 
-require_command mgmt_cli
-require_command jq
-require_command cp_log_export
 require_command openssl
 require_command base64
 require_command clish
 require_command timeout
+wait_for_command mgmt_cli
+wait_for_command jq
+wait_for_command cp_log_export
 
 COUNTRIES_JSON="$(decode_json "$COUNTRIES_B64")"
 APPLICATIONS_JSON="$(decode_json "$APPLICATIONS_B64")"
@@ -146,7 +168,6 @@ api set simple-gateway \
   firewall true \
   application-control true \
   url-filtering true \
-  nat-hide-internal-interfaces true \
   interfaces.1.name eth0 \
   interfaces.1.ipv4-address "$FRONTEND_IP" \
   interfaces.1.ipv4-network-mask 255.255.255.0 \
@@ -166,17 +187,17 @@ while IFS= read -r uid; do
 done < <(
   printf '%s' "$ACCESS_RULEBASE" |
     jq -r --arg prefix "$RULE_PREFIX" \
-      '.. | objects | select(.type? == "access-rule" and (.name? | startswith($prefix))) | .uid'
+      '.. | objects | select(.type? == "access-rule" and ((.name? // "") | tostring | startswith($prefix))) | .uid'
 )
 
-NAT_RULEBASE="$(api show nat-rulebase package "$PACKAGE_NAME" limit 500 details-level standard)"
-while IFS= read -r uid; do
-  [[ -n "$uid" ]] && api delete nat-rule package "$PACKAGE_NAME" uid "$uid" >/dev/null
-done < <(
-  printf '%s' "$NAT_RULEBASE" |
-    jq -r --arg prefix "$RULE_PREFIX" \
-      '.. | objects | select(.type? == "nat-rule" and (.name? | startswith($prefix))) | .uid'
-)
+for nat_rule_name in \
+  "${RULE_PREFIX}DNAT 18080 to EU Web" \
+  "${RULE_PREFIX}No NAT Protected Networks" \
+  "${RULE_PREFIX}Hide Protected Networks"; do
+  if api show nat-rule package "$PACKAGE_NAME" name "$nat_rule_name" >/dev/null 2>&1; then
+    api delete nat-rule package "$PACKAGE_NAME" name "$nat_rule_name" >/dev/null
+  fi
+done
 
 if api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
   HTTPS_RULEBASE="$(api show https-rulebase name "$HTTPS_LAYER" limit 500 details-level standard)"
@@ -185,7 +206,7 @@ if api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
   done < <(
     printf '%s' "$HTTPS_RULEBASE" |
       jq -r --arg prefix "$RULE_PREFIX" \
-        '.. | objects | select(.type? == "https-rule" and (.name? | startswith($prefix))) | .uid'
+        '.. | objects | select(.type? == "https-rule" and ((.name? // "") | tostring | startswith($prefix))) | .uid'
   )
 fi
 
@@ -216,6 +237,13 @@ ensure_service_tcp() {
   fi
 }
 
+ensure_dns_domain() {
+  local name="$1"
+  if ! api show dns-domain name "$name" >/dev/null 2>&1; then
+    api add dns-domain name "$name" is-sub-domain true >/dev/null
+  fi
+}
+
 ensure_network "$EU_NETWORK" "${EU_CIDR%/*}" "${EU_CIDR#*/}"
 ensure_network "$REMOTE_NETWORK" "${REMOTE_CIDR%/*}" "${REMOTE_CIDR#*/}"
 ensure_network "$MANAGEMENT_NETWORK" "${MANAGEMENT_CIDR%/*}" "${MANAGEMENT_CIDR#*/}"
@@ -238,14 +266,43 @@ url_command=(
   add application-site
   name "$BLOCKED_URLS_OBJECT"
   primary-category "Custom_Application_Site"
-  urls-defined-as-regular-expression false
 )
+if [[ "$CHECKPOINT_RELEASE" == "R81" ]]; then
+  url_command+=(urls-defined-as-regular-expression true)
+else
+  url_command+=(urls-defined-as-regular-expression false)
+fi
 url_index=1
 while IFS= read -r url; do
+  if [[ "$CHECKPOINT_RELEASE" == "R81" ]]; then
+    url="$(printf '%s' "$url" | sed 's#[][\\.^$*+?(){}|/]#\\&#g')"
+  fi
   url_command+=("url-list.$url_index" "$url")
   url_index=$((url_index + 1))
 done < <(printf '%s' "$URLS_JSON" | jq -e -r '.[]')
 api "${url_command[@]}" >/dev/null
+
+domain_rule=(add access-rule
+  layer "$ACCESS_LAYER" position 1
+  name "${RULE_PREFIX}Block DNS Domains"
+  source.1 "$PROTECTED_GROUP"
+  service.1 http
+  service.2 https
+  action Drop
+  track.type "Extended Log"
+  install-on.1 "$MANAGED_GATEWAY_NAME")
+domain_index=1
+while IFS= read -r url; do
+  domain="${url#http://}"
+  domain="${domain#https://}"
+  [[ "$domain" == */* ]] && continue
+  domain="${domain%.}"
+  [[ -n "$domain" ]] || continue
+  dns_domain=".$domain"
+  ensure_dns_domain "$dns_domain"
+  domain_rule+=("destination.$domain_index" "$dns_domain")
+  domain_index=$((domain_index + 1))
+done < <(printf '%s' "$URLS_JSON" | jq -e -r '.[]')
 
 APPLICATION_OBJECTS=("$BLOCKED_URLS_OBJECT")
 while IFS= read -r application; do
@@ -309,7 +366,7 @@ if [[ "$INBOUND_ENABLED" == "true" ]]; then
     action Accept track.type "Extended Log" install-on.1 "$MANAGED_GATEWAY_NAME"
 
   api add nat-rule \
-    package "$PACKAGE_NAME" position 1 \
+    package "$PACKAGE_NAME" position bottom \
     name "${RULE_PREFIX}DNAT 18080 to EU Web" \
     original-source Any \
     original-destination "$MANAGED_GATEWAY_NAME" \
@@ -321,6 +378,31 @@ if [[ "$INBOUND_ENABLED" == "true" ]]; then
     install-on "$MANAGED_GATEWAY_NAME" \
     >/dev/null
 fi
+
+api add nat-rule \
+  package "$PACKAGE_NAME" position bottom \
+  name "${RULE_PREFIX}No NAT Protected Networks" \
+  original-source "$PROTECTED_GROUP" \
+  original-destination "$PROTECTED_GROUP" \
+  original-service Any \
+  translated-source Original \
+  translated-destination Original \
+  translated-service Original \
+  install-on "$MANAGED_GATEWAY_NAME" \
+  >/dev/null
+
+api add nat-rule \
+  package "$PACKAGE_NAME" position bottom \
+  name "${RULE_PREFIX}Hide Protected Networks" \
+  original-source "$PROTECTED_GROUP" \
+  original-destination Any \
+  original-service Any \
+  translated-source "$MANAGED_GATEWAY_NAME" \
+  translated-destination Original \
+  translated-service Original \
+  method hide \
+  install-on "$MANAGED_GATEWAY_NAME" \
+  >/dev/null
 
 application_rule=(add access-rule
   layer "$ACCESS_LAYER" position 1
@@ -336,6 +418,9 @@ for application in "${APPLICATION_OBJECTS[@]}"; do
   application_index=$((application_index + 1))
 done
 api "${application_rule[@]}" >/dev/null
+if ((domain_index > 1)); then
+  api "${domain_rule[@]}" >/dev/null
+fi
 
 geo_outbound=(add access-rule
   layer "$ACCESS_LAYER" position 1
@@ -426,7 +511,7 @@ if [[ "$TLS_ENABLED" == "true" ]]; then
     track Log \
     install-on.1 "$MANAGED_GATEWAY_NAME" \
     >/dev/null
-else
+elif [[ "$CHECKPOINT_RELEASE" != "R81" ]]; then
   api set simple-gateway uid "$GATEWAY_UID" enable-https-inspection false >/dev/null
 fi
 

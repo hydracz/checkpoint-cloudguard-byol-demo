@@ -2,7 +2,8 @@
 
 ## BYOL 激活
 
-Terraform 只部署 Marketplace `mgmt-byol` 镜像。许可证 entitlement、contract
+Terraform 默认部署 Marketplace `mgmt-byol` 镜像，也可显式选择 R82/R82.10 有 Plan
+custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlement、contract
 和激活信息不写入 `tfvars`、Terraform state 或脚本参数。
 
 若首次策略安装提示 blade 未授权：
@@ -21,11 +22,17 @@ Terraform 只部署 Marketplace `mgmt-byol` 镜像。许可证 entitlement、con
 2. Allow Restricted Management SSH。
 3. Block Geo Inbound。
 4. Block Geo Outbound。
-5. Block Domains URLs and Applications。
-6. 可选 Restricted North South Inbound。
-7. Allow Inspected East West Web。
-8. Allow Web and DNS Egress。
-9. Cleanup Drop。
+5. Block DNS Domains。
+6. Block Domains URLs and Applications。
+7. 可选 Restricted North South Inbound。
+8. Allow Inspected East West Web。
+9. Allow Web and DNS Egress。
+10. Cleanup Drop。
+
+脚本先用 `CloudGuard Demo - No NAT Protected Networks` 保留 Spoke 间的 workload
+源地址，再用 `CloudGuard Demo - Hide Protected Networks` manual NAT rule 实现公网
+出站 Hide NAT。不依赖 R82 才支持的 `nat-hide-internal-interfaces` Management API
+参数，因此 R81/R82 使用相同策略路径；T16 检查远端 Web journal 中的真实来源地址。
 
 `CloudGuard Demo - Allow Restricted Management SSH` 与 Azure NSG 使用同一个
 `management_cidr`，目标只包含 Gateway object。Policy 安装后，其他公网来源
@@ -61,6 +68,17 @@ Gateway 执行 `install-policy`。
 - Public CA 通过 Azure Run Command 安装到两台工作负载 VM。
 - T07 检查网站叶子证书 issuer，而不是只读取策略对象。
 
+R81 GA 的 Management API 1.7 不公开 `add-outbound-inspection-certificate`，也不公开
+R82 使用的 Gateway HTTPS Inspection 设置参数。因此 R81 无 Plan 自动化要求
+`enable_tls_inspection=false`：T06 改用明文 HTTP 路径继续验证 URL Filtering，T07
+明确记录 `SKIP`。脚本不会使用未支持的 `dbedit` 或私有 SmartConsole API 修改证书
+数据库。需要自动验证 TLS 解密时使用 R82/R82.10；若必须在 R81 手工配置，应由客户
+按官方 SmartConsole 流程创建/导入 CA，并单独完成证书治理与流量验证。
+
+R81 对 custom Application/Site 的普通 URL pattern 匹配与 R82 不一致，脚本会把
+R81 pattern 转义为正则表达式。对于 `blocked_urls` 中不含 path 的纯域名，还会创建
+DNS Domain object 和独立 Drop rule，确保未启用 TLS 解密时仍可按域名阻断 HTTPS。
+
 生产设计需要企业 CA 审批、密钥托管、证书轮换、金融/医疗/个人隐私站点
 bypass、QUIC/HTTP3 策略、证书固定应用测试和终端信任分发。
 
@@ -88,8 +106,14 @@ Export Rule。
 
 ## 重复执行与恢复
 
+- `CHECKPOINT_TRANSPORT=auto` 默认通过 Gaia SSH 等待 Management API 和 Log
+  Exporter 命令最多 30 分钟，再回退到 Azure Run Command；可用
+  `CHECKPOINT_SSH_WAIT_SECONDS` 和 `CHECKPOINT_SSH_RETRY_SECONDS` 调整。
+- 若订阅自动删除 Terraform-managed SSH rule，在客户确认允许恢复后设置
+  `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本只创建来源为 `management_cidr`、
+  目的端口 22 的同名 rule；默认 `false`，不会自动对抗组织 Policy。
 - `configure-policy.sh` 可重复执行；只重建 `CloudGuard Demo - ` 规则和
-  `CloudGuard-*` 演示对象。
+  NAT 规则以及 `CloudGuard-*` 演示对象。
 - 修改 Geo/Application/URL 清单后重新 `plan/apply`，再运行 `configure-policy.sh`。
 - WORM lock 不可回滚。锁定后，Storage 在保留期结束前会阻止相关资源删除。
 - `lock-worm.sh` 检测到 `Locked` 时直接返回。锁定后不要修改 ARM template 中的

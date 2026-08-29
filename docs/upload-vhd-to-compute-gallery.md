@@ -1,8 +1,9 @@
 # 可选：从本地 tar.gz 发布 Azure Compute Gallery 镜像
 
-本文是独立的可选材料，说明如何把本地已有的 `tar.gz` 解压为 VHD、上传到私有
-Azure Page Blob，再发布为 Azure Compute Gallery image version 并复制到多个
-region。仓库的默认部署仍使用 Marketplace image；只有需要自定义镜像时才执行本文。
+本文是独立的可选材料，说明如何把本地已有的 `tar.gz` 解压为 VHD，通过 Managed
+Disk Direct Upload 或私有 Azure Page Blob 发布为 Azure Compute Gallery image
+version，并复制到多个 region。仓库默认仍使用 Marketplace image；只有需要自定义
+镜像时才执行本文。
 
 所有命令均使用占位符，不包含真实文件名、路径、订阅或 Azure 资源信息。
 
@@ -18,11 +19,53 @@ region。仓库的默认部署仍使用 Marketplace image；只有需要自定�
   条款。跨客户分发前还要取得软件厂商或授权合作伙伴的书面许可。
 - 压缩包、VHD、校验文件和 AzCopy 日志应保存在 Git checkout 之外。
 
-需要 Bash、Azure CLI、AzCopy v10、`tar`，以及目标资源组内的 Gallery/Image/
-Storage 管理权限。上传身份还需要 Storage Account 上的
-`Storage Blob Data Contributor`。
+需要 Bash、Azure CLI、AzCopy v10、`tar`，以及目标资源组内的
+Disk/Image/Compute Gallery 管理权限。只有选择后文的 Page Blob 手工路径时，上传
+身份才额外需要 Storage Account 上的 `Storage Blob Data Contributor`。
 
-## 1. 设置参数并解压
+## 推荐：使用仓库脚本
+
+脚本会校验同名 `.sha256`（如存在）、单一归档成员、512 字节对齐和固定 VHD
+`conectix` footer，然后依次创建 upload Managed Disk、临时 managed image、Gallery
+definition/version，并确认所有目标 region 的复制状态为 `Completed`。解压文件和
+AzCopy SAS 仅存在于 gitignored `.local/` 临时目录，结束时自动删除/撤销。
+
+R81 无 Plan 示例（不传任何 `--plan-*`）：
+
+```bash
+./scripts/publish-vhd-image.sh \
+  --archive "<PATH_TO_R81_TAR_GZ>" \
+  --subscription "<SUBSCRIPTION_ID>" \
+  --resource-group "<IMAGE_RESOURCE_GROUP>" \
+  --location "<SOURCE_REGION>" \
+  --gallery "<GALLERY_NAME>" \
+  --definition "<R81_DEFINITION_NAME>" \
+  --version "<MAJOR.MINOR.PATCH>" \
+  --checkpoint-release R81 \
+  --publisher "<GALLERY_PUBLISHER_LABEL>" \
+  --offer "<GALLERY_OFFER_LABEL>" \
+  --sku mgmt-byol \
+  --target-region "<DEPLOYMENT_REGION>"
+```
+
+Marketplace 派生 R82 示例使用同一命令，并增加：
+
+```text
+--checkpoint-release R82
+--plan-publisher checkpoint
+--plan-product check-point-cg-r82
+--plan-name mgmt-byol
+```
+
+R82/R82.10 必须提供与版本一致的 Check Point Plan；三项 `--plan-*` 必须全部提供。
+只有已获授权的 R81 无 Plan image 可以全部省略。脚本给 definition 加上
+`checkpoint-release` 和 `marketplace-plan-required` 标签；`preflight.sh` 会在标签
+存在时检查它们与 Terraform 变量一致，避免 R81/R82 并存后选错版本或 Plan 模式。
+脚本保留 upload disk 和临时 managed image，待部署验证完成后再删除。
+
+## 手工 Page Blob 路径
+
+### 1. 设置参数并解压
 
 ```bash
 SUBSCRIPTION_ID="<SUBSCRIPTION_ID>"
@@ -66,7 +109,7 @@ file "$VHD_PATH"
 如有随包提供的 `.sha256`，应在解压前先校验。`512` 字节对齐只是必要条件；
 还应按镜像厂商要求确认 VHD 是 fixed、generalized 且可在 Azure 启动。
 
-## 2. 创建私有 Blob 并上传 VHD
+### 2. 创建私有 Blob 并上传 VHD
 
 登录并创建资源：
 
@@ -144,7 +187,7 @@ az storage blob show \
 
 预期 `blobType=PageBlob`，且 `contentLength` 等于 `$VHD_SIZE_BYTES`。
 
-## 3. 从私有 Blob 创建临时 managed image
+### 3. 从私有 Blob 创建临时 managed image
 
 为 Compute 服务生成短期只读 user-delegation SAS。`SAS_EXPIRY` 使用未来几小时内的
 UTC 时间，例如 `YYYY-MM-DDTHH:MMZ`；不要打印、保存或提交生成的 URL。
@@ -203,7 +246,7 @@ BRIDGE_IMAGE_ID="$(
 )"
 ```
 
-## 4. 创建 Gallery image definition
+### 4. 创建 Gallery image definition
 
 ```bash
 GALLERY_PUBLISHER="<GALLERY_PUBLISHER_LABEL>"
@@ -261,7 +304,7 @@ az vm image terms accept \
   --plan "$PLAN_NAME"
 ```
 
-## 5. 创建多区域 image version
+### 5. 创建多区域 image version
 
 每个目标项格式为 `region=replica-count=storage-account-type`。数组必须包含源区域：
 
@@ -305,7 +348,7 @@ az sig image-version show \
 只有顶层 `provisioningState=Succeeded`，并且所有目标 region 的复制状态均为
 `Completed` 后，才交给下游部署。
 
-## 6. 在本仓库中使用
+## 在本仓库中使用
 
 取得精确 version ID：
 
@@ -323,21 +366,33 @@ az sig image-version show \
 把结果写入**不提交**的 `configs/demo.tfvars`：
 
 ```hcl
-checkpoint_image_id = "<GALLERY_IMAGE_VERSION_RESOURCE_ID>"
+checkpoint_image_id            = "<GALLERY_IMAGE_VERSION_RESOURCE_ID>"
+checkpoint_image_requires_plan = true
 ```
+
+R82/R82.10 Marketplace 派生镜像必须使用 `true`。只有来源本身不是 Marketplace、
+且已获 Check Point 授权的 R81 镜像才使用 `false`；R81 无 Plan 镜像还必须同时设置
+`checkpoint_os_version = "R81"` 和 `enable_tls_inspection = false`。该开关不会
+清除 Azure 已识别的 Marketplace 来源。
 
 先运行 `./scripts/preflight.sh --var-file configs/demo.tfvars`，再部署。至少在一个目标
 region 做非生产启动测试，确认新 VM 生成新的 hostname、网络身份和 host keys，
 且不含源环境凭据、证书、策略、许可证状态或日志。
 
-Gallery version 验证完成后，可删除临时 managed image；Page Blob 是否保留由备份
-策略决定：
+Gallery version 和新 VM 验证完成后，可删除临时 managed image；脚本 Direct Upload
+路径还可删除同名 upload disk。Page Blob 是否保留由备份策略决定：
 
 ```bash
 az image delete \
   --subscription "$SUBSCRIPTION_ID" \
   --resource-group "$IMAGE_RG" \
   --name "$BRIDGE_IMAGE"
+
+az disk delete \
+  --subscription "$SUBSCRIPTION_ID" \
+  --resource-group "$IMAGE_RG" \
+  --name "<UPLOAD_DISK_NAME>" \
+  --yes
 ```
 
 ## 常见错误

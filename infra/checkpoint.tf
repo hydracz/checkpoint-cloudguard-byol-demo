@@ -16,7 +16,7 @@ module "checkpoint" {
 
   source_image_vhd_uri           = "noCustomUri"
   source_image_id                = trimspace(var.checkpoint_image_id)
-  source_image_requires_plan     = trimspace(var.checkpoint_image_id) != ""
+  source_image_requires_plan     = local.checkpoint_source_requires_plan
   hyper_v_generation             = "V1"
   authentication_type            = "SSH Public Key"
   admin_SSH_key                  = var.admin_ssh_public_key

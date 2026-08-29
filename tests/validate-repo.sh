@@ -10,10 +10,11 @@ required=(
   infra/vendor/checkpoint-cloudguard-network-security/LICENSE
   infra/vendor/checkpoint-cloudguard-network-security/PATCHES.md
   infra/networking.tf infra/workloads.tf infra/logging.tf infra/outputs.tf
-  infra/tests/demo.tftest.hcl
+  infra/tests/demo.tftest.hcl infra/tests/r81-module.tftest.hcl
   configs/demo.tfvars.example
   cloud-init/workload.yaml cloud-init/collector.yaml
   scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh
+  scripts/publish-vhd-image.sh
   scripts/verify-vendor.sh
   scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh
   scripts/enable-audit-export.sh
@@ -60,9 +61,32 @@ fi
 grep -q 'installation_type.*= "standalone"' "$ROOT/infra/checkpoint.tf"
 grep -q 'vm_os_sku.*= local.checkpoint_plan' "$ROOT/infra/checkpoint.tf"
 grep -q 'source_image_id.*= trimspace(var.checkpoint_image_id)' "$ROOT/infra/checkpoint.tf"
-grep -q 'source_image_requires_plan.*trimspace(var.checkpoint_image_id) != ""' "$ROOT/infra/checkpoint.tf"
+grep -q 'source_image_requires_plan.*= local.checkpoint_source_requires_plan' "$ROOT/infra/checkpoint.tf"
 grep -q 'variable "checkpoint_image_id"' "$ROOT/infra/variables.tf"
+grep -q 'variable "checkpoint_image_requires_plan"' "$ROOT/infra/variables.tf"
+grep -q 'R81 Management API 1.7 cannot automate' "$ROOT/infra/variables.tf"
+grep -q 'R82/R8210 custom images must retain' "$ROOT/infra/variables.tf"
+grep -q 'if \[\[ "\$source_requires_plan" == "true" \]\]' "$ROOT/scripts/deploy.sh"
+grep -q -- '--checkpoint-release R81|R82|R8210' "$ROOT/scripts/publish-vhd-image.sh"
+grep -q 'marketplace-plan-required' "$ROOT/scripts/preflight.sh"
+grep -q 'join("\\u001f")' "$ROOT/scripts/preflight.sh"
+grep -q 'CHECKPOINT_SSH_WAIT_SECONDS' "$ROOT/scripts/configure-policy.sh"
+grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/configure-policy.sh"
+grep -q 'ensure_restricted_ssh_nsg_rule' "$ROOT/scripts/lib.sh"
+grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/run-tests.sh"
+grep -q 'wait_for_command cp_log_export' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'name "${RULE_PREFIX}Hide Protected Networks"' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'name "${RULE_PREFIX}No NAT Protected Networks"' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'name "${RULE_PREFIX}Block DNS Domains"' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'urls-defined-as-regular-expression true' "$ROOT/scripts/checkpoint-policy.sh"
+! grep -q 'nat-hide-internal-interfaces true' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'LOG_INGEST_WAIT_SECONDS' "$ROOT/scripts/run-tests.sh"
+grep -q 'scheme="http"' "$ROOT/scripts/vm-case.sh"
+! grep -q '"${var_args\[@\]}"' "$ROOT/scripts/deploy.sh"
+! grep -q '"${args\[@\]}"' "$ROOT/scripts/plan.sh" "$ROOT/scripts/destroy.sh"
 grep -q 'Marketplace must remain the default Check Point image source' "$ROOT/infra/tests/demo.tftest.hcl"
+grep -q 'r81_planless_full_module_plan' "$ROOT/infra/tests/r81-module.tftest.hcl"
+grep -q '"cgi-mgmt-r81"' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/common/common/variables.tf"
 grep -q 'example-gallery/images/checkpoint-r82-byol/versions/1.0.0' "$ROOT/configs/demo.tfvars.example"
 grep -q 'mgmt-byol' "$ROOT/infra/locals.tf"
 grep -q 'management_cidr != "0.0.0.0/0"' "$ROOT/infra/variables.tf"
@@ -110,7 +134,7 @@ if grep -RInE \
   exit 1
 fi
 
-for id in $(seq -w 1 13); do
+for id in $(seq -w 1 16); do
   grep -q "T${id}" "$ROOT/docs/test-matrix.md" || {
     echo "T${id} absent from test matrix." >&2
     exit 1
