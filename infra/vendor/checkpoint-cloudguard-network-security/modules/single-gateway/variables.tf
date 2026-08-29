@@ -69,6 +69,23 @@ variable "source_image_vhd_uri" {
   default     = "noCustomUri"
 }
 
+variable "source_image_id" {
+  description = "Optional managed image or Azure Compute Gallery image resource ID. Leave empty to use source_image_vhd_uri or the Marketplace image."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.source_image_id) == "" || var.source_image_vhd_uri == "noCustomUri"
+    error_message = "source_image_id and source_image_vhd_uri cannot both select a custom image."
+  }
+}
+
+variable "source_image_requires_plan" {
+  description = "Whether a custom image is derived from a Marketplace image and requires the configured purchase plan."
+  type        = bool
+  default     = false
+}
+
 variable "hyper_v_generation" {
   description = "The Hyper-V generation of the virtual machine. Set to 'V2' to deploy a Generation 2 VM, or 'V1' for Generation 1. 'V2' is supported on Gaia version R82.10 or later and is not supported with installation_type 'standalone'."
   type        = string

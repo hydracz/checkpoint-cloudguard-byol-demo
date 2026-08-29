@@ -129,12 +129,21 @@ terraform_var_args() {
 terraform_console_value() {
   local expression="$1"
   local var_file="${2:-}"
-  local args=()
+  local result
+
   if [[ -n "$var_file" ]]; then
-    args+=("-var-file=$var_file")
+    result="$(
+      printf '%s\n' "$expression" |
+        "$TERRAFORM" -chdir="$INFRA" console "-var-file=$var_file"
+    )"
+  else
+    result="$(
+      printf '%s\n' "$expression" |
+        "$TERRAFORM" -chdir="$INFRA" console
+    )"
   fi
-  printf '%s\n' "$expression" |
-    "$TERRAFORM" -chdir="$INFRA" console "${args[@]}" |
+
+  printf '%s\n' "$result" |
     tail -1 |
     sed -e 's/^"//' -e 's/"$//'
 }

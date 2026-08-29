@@ -301,7 +301,7 @@ resource "azurerm_virtual_machine" "single_gateway_vm_instance" {
   }
 
   dynamic "plan" {
-    for_each = module.custom_image.create_custom_image ? [] : [1]
+    for_each = local.source_image_uses_plan ? [1] : []
     content {
       name      = module.common.vm_os_sku
       publisher = module.common.publisher
@@ -351,11 +351,11 @@ resource "azurerm_virtual_machine" "single_gateway_vm_instance" {
   }
 
   storage_image_reference {
-    id        = module.custom_image.id
-    publisher = module.custom_image.create_custom_image ? null : module.common.publisher
-    offer     = module.common.vm_os_offer
-    sku       = module.common.vm_os_sku
-    version   = module.common.vm_os_version
+    id        = local.use_custom_image ? local.custom_image_id : null
+    publisher = local.use_custom_image ? null : module.common.publisher
+    offer     = local.use_custom_image ? null : module.common.vm_os_offer
+    sku       = local.use_custom_image ? null : module.common.vm_os_sku
+    version   = local.use_custom_image ? null : module.common.vm_os_version
   }
 
   storage_os_disk {
@@ -410,7 +410,7 @@ resource "azurerm_linux_virtual_machine" "single_gateway_vm_instance_extended" {
   }
 
   dynamic "plan" {
-    for_each = module.custom_image.create_custom_image ? [] : [1]
+    for_each = local.source_image_uses_plan ? [1] : []
     content {
       name      = module.common.vm_os_sku
       publisher = module.common.publisher
@@ -418,10 +418,10 @@ resource "azurerm_linux_virtual_machine" "single_gateway_vm_instance_extended" {
     }
   }
 
-  source_image_id = module.custom_image.create_custom_image ? module.custom_image.id : null
+  source_image_id = local.use_custom_image ? local.custom_image_id : null
 
   dynamic "source_image_reference" {
-    for_each = module.custom_image.create_custom_image ? [] : [1]
+    for_each = local.use_custom_image ? [] : [1]
     content {
       publisher = module.common.publisher
       offer     = module.common.vm_os_offer

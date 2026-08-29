@@ -26,6 +26,7 @@ run "default_demo_plan" {
     management_cidr      = "203.0.113.10/32"
     admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key              = "validation-only-sic-key"
+    checkpoint_image_id  = ""
   }
 
   assert {
@@ -55,12 +56,59 @@ run "default_demo_plan" {
   }
 
   assert {
+    condition     = var.checkpoint_image_id == ""
+    error_message = "Marketplace must remain the default Check Point image source."
+  }
+
+  assert {
     condition = alltrue([
       azurerm_virtual_network_peering.eu_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
       azurerm_virtual_network_peering.remote_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
     ])
     error_message = "Spoke-to-hub peerings must depend on the module-created hub VNet ID."
   }
+}
+
+run "custom_image_plan" {
+  command = plan
+
+  variables {
+    subscription_id      = "00000000-0000-0000-0000-000000000000"
+    tenant_id            = "00000000-0000-0000-0000-000000000000"
+    client_id            = "00000000-0000-0000-0000-000000000000"
+    client_secret        = "validation-only"
+    management_cidr      = "203.0.113.10/32"
+    admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key              = "validation-only-sic-key"
+    checkpoint_image_id  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r82-byol/versions/1.0.0"
+  }
+
+  assert {
+    condition     = var.checkpoint_image_id != ""
+    error_message = "A valid custom image ID must override the Marketplace source."
+  }
+
+  assert {
+    condition     = local.checkpoint_plan == "mgmt-byol"
+    error_message = "Marketplace-derived custom images must retain the mgmt-byol plan."
+  }
+}
+
+run "invalid_custom_image_id" {
+  command = plan
+
+  variables {
+    subscription_id      = "00000000-0000-0000-0000-000000000000"
+    tenant_id            = "00000000-0000-0000-0000-000000000000"
+    client_id            = "00000000-0000-0000-0000-000000000000"
+    client_secret        = "validation-only"
+    management_cidr      = "203.0.113.10/32"
+    admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key              = "validation-only-sic-key"
+    checkpoint_image_id  = "not-an-azure-resource-id"
+  }
+
+  expect_failures = [var.checkpoint_image_id]
 }
 
 run "restricted_inbound_plan" {
@@ -74,6 +122,7 @@ run "restricted_inbound_plan" {
     management_cidr          = "203.0.113.10/32"
     admin_ssh_public_key     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                  = "validation-only-sic-key"
+    checkpoint_image_id      = ""
     enable_inbound_demo      = true
     inbound_demo_source_cidr = "198.51.100.10/32"
   }
@@ -106,6 +155,7 @@ run "audit_export_plan" {
     management_cidr        = "203.0.113.10/32"
     admin_ssh_public_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                = "validation-only-sic-key"
+    checkpoint_image_id    = ""
     enable_log_data_export = true
   }
 

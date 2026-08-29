@@ -42,14 +42,20 @@ checkpoint-cloudguard-network-security/
   - 本地：只保留 `required_providers`，继承根 module Provider
   - 作用：根 module 可选择 Azure CLI 或完整 Service Principal 认证，并显式使用 `subscription_id`
   - AzureRM 从上游 `~> 4.73.0` 固定为现场使用的 `4.80.0`
+- `modules/single-gateway/{variables,locals,main}.tf`
+  - 增加已有 managed image 或 Azure Compute Gallery image ID 输入
+  - Marketplace 派生镜像继续传入原始 purchase plan
+  - 与上游 VHD URI 路径互斥
 
-Check Point module 的资源逻辑、变量和 cloud-init 保持上游实现。
+除 `PATCHES.md` 明确记录的修改外，Check Point module 的资源逻辑、变量和
+cloud-init 保持上游实现。
 
 ## 依赖边界
 
 - Terraform module 源码来自本目录。
 - Terraform Provider（AzureRM、Random）仍由 Terraform Registry 安装，并由 `infra/.terraform.lock.hcl` 固定版本和校验和。
-- Azure Marketplace image 仍在部署时从 Azure 获取，这是运行时产品镜像，不是 Terraform module。
+- 默认仍在部署时从 Azure Marketplace 获取运行时产品镜像；也可显式引用保留原始
+  purchase plan 的 generalized custom image。
 
 ## 更新步骤
 

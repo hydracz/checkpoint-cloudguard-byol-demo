@@ -28,6 +28,11 @@ output "checkpoint_plan" {
   description = "Azure Marketplace BYOL plan used by standalone mode."
 }
 
+output "checkpoint_image_id" {
+  value       = trimspace(var.checkpoint_image_id) != "" ? trimspace(var.checkpoint_image_id) : null
+  description = "Custom managed image or Compute Gallery image ID. Null means the Marketplace image is used."
+}
+
 output "checkpoint_vm_name" {
   value       = module.checkpoint.vm_name
   description = "Check Point standalone VM name."

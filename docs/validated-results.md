@@ -25,6 +25,101 @@ plan/sku  = mgmt-byol
 的 Dv6。现场改用 Check Point module 支持且同为 32 GiB 内存的
 `Standard_F16s`。这个选择只说明当时的订阅容量，不是长期容量承诺。
 
+## Custom image 与 VHD POC
+
+2026-08-28 使用 Marketplace 版本 `8200.900779.2061` 完成以下验证：
+
+| 项目 | 结果 |
+| --- | --- |
+| 基础磁盘 | 直接从 Marketplace image 创建，100 GiB、x64、Gen1；从未附加到 VM 或启动 |
+| Compute Gallery | `<GALLERY>/<DEFINITION>/<VERSION>`，`Generalized` |
+| Purchase plan | 保留 `checkpoint:check-point-cg-r82:mgmt-byol` |
+| 副本 | Southeast Asia 和 North Europe 均为 `Completed` |
+| 验证 VM | 独立验证 Gateway 从 Gallery version 创建并进入 `Succeeded` |
+| CPU 架构 | `x86_64` |
+| 新网络身份 | hostname 为验证 VM 名称；`eth0=10.70.0.4/24`、`eth1=10.70.1.4/24` |
+| 登录账户 | `admin` SSH key 登录成功；密码状态 `LK`；Azure 占位用户 `notused` 不存在 |
+| 主机密钥 | SSH host key 在验证 VM 首次启动时生成 |
+| Check Point 密钥 | 检查时有两个 private-key 文件的修改时间属于本次首次启动窗口 |
+| VHD | 从未启动的基础磁盘导出为 100 GiB 加密 Page Blob，不是从验证 VM 或已配置 Demo Gateway 导出 |
+
+保留的 POC 资源：
+
+```text
+Gallery image:
+  <GALLERY>/<DEFINITION>/<VERSION>
+Private VHD:
+  https://<STORAGE_ACCOUNT>.blob.core.windows.net/vhds/<IMAGE>.vhd
+x86 workstation copy:
+  /data/cloudguard-images/<IMAGE>.vhd
+SHA-256:
+  e4eca6aea04d9bd6a450e509cc7a6eaec06ee616cde19f7e9468dbf7db5ef950
+```
+
+VHD storage account 禁用 public network 和 shared-key access，通过 x64 runner
+VNet 中的 Blob Private Endpoint 访问。本地 VHD 权限是 `0600`。验证结束后 Gateway
+与 x64 runner 均已 deallocated；Gallery version、Private Blob、验证 VM 和 runner
+数据盘副本保留。
+
+验证 VM 首次启动后存在 Check Point 配置文件、private keys、Azure provisioning
+data 和非空日志，这是正常运行状态。这些状态没有进入 Gallery/VHD，因为镜像源是
+独立的、从未启动的基础磁盘。
+
+不能把这条结论外推到已配置 VM 的磁盘。Azure specialized image 会保留原机账户、
+hostname、主机标识和磁盘中的全部 Check Point 状态；`waagent -deprovision+user`
+也不保证清除应用证书、SIC、许可证、策略和日志。因此没有使用现有
+`cpbyol-gateway` 作为镜像源。
+
+目标订阅部署 Marketplace 派生 custom image 时仍需要接受原始条款并传入 purchase
+plan。若客户限制的是 Marketplace 条款、商务市场或 Azure Policy，这个 custom
+image 不能作为绕过手段。跨客户共享前还需要 Check Point 对服务订单/EULA 的书面
+确认。
+
+## Custom image 完整端到端验证
+
+2026-08-29 在独立 Resource Group 和独立 Terraform state 中，使用上节的
+Generalized Gallery version 部署了完整 standalone Demo。真实 subscription、
+Gallery 和 image ID 仅通过运行时环境变量注入，没有写入仓库。
+
+| 检查项 | 结果 |
+| --- | --- |
+| Terraform image reference | 指向指定 Gallery image version |
+| VM purchase plan | `checkpoint:check-point-cg-r82:mgmt-byol` |
+| Gaia 首次启动 | `config_system` 完成，FTW 报告 `First time configuration was completed` |
+| 新 VM 身份 | 使用新的 VM hostname、两块 NIC 地址、SSH host keys 和 SIC key |
+| Management API | Ready，policy 发布和安装成功 |
+| HTTPS Inspection | 新 Outbound CA 已安装到两台 workload |
+| Log Exporter | `azure-monitor` 为 Running |
+| Log Analytics | 出现本次 Gateway 的 Check Point 日志 |
+| Continuous Export | 成功创建到未锁定的 immutable container |
+| Terraform 收敛 | 创建 export 时完整 plan 仅新增一条 data export rule |
+
+测试矩阵结果：
+
+```text
+T01-T02  effective routes                           PASS
+T03      cross-region east-west TCP/8080           PASS
+T04      allowed HTTPS                             PASS
+T05      blocked domain                            PASS
+T06      blocked URL path                          PASS
+T07      HTTPS Inspection issuer                   PASS
+T08      Management API rulebase                   PASS
+T09      Log Exporter                              PASS
+T10      Log Analytics ingestion                   PASS
+T11      Immutability Policy                       PASS
+T12      approved Azure regions                    PASS
+T13      optional inbound DNAT                      SKIP
+```
+
+T13 为预期 `SKIP`，因为 example 默认 `enable_inbound_demo=false`，不是失败。
+
+本次故意强制 `CHECKPOINT_TRANSPORT=run-command` 的首次尝试跨越 Gaia FTW reboot
+时，Azure Run Command handler 没有成功安装并留下 stale `Updating`。Guest 中没有
+policy 进程，Management API 本身正常。随后使用受 `management_cidr` 限制的 SSH
+执行同一幂等 policy 脚本，全部功能测试通过。仓库默认的
+`CHECKPOINT_TRANSPORT=auto` 会优先使用 SSH，因此不要为 custom image 强制设为
+`run-command`，除非已在目标 image/区域验证该 extension 路径。
+
 ## 数据路径观察记录
 
 我执行：

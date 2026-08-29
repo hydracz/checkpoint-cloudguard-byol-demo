@@ -11,3 +11,10 @@ configs/*.tfvars
 *.pem
 *.p12
 *.key
+
+# VM image artifacts are large and must never be committed.
+*.vhd
+*.vhd.*
+*.vhdx
+*.vhdx.*
+cloudguard-images/

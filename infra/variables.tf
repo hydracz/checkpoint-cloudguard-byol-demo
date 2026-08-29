@@ -130,6 +130,23 @@ variable "checkpoint_os_version" {
   }
 }
 
+variable "checkpoint_image_id" {
+  description = "Optional generalized Check Point managed image or Azure Compute Gallery image ID. Leave empty to use the Azure Marketplace image."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      trimspace(var.checkpoint_image_id) == "" ||
+      can(regex(
+        "(?i)^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourcegroups/[^/]+/providers/microsoft\\.compute/(images/[^/]+|galleries/[^/]+/images/[^/]+(/versions/[0-9]+\\.[0-9]+\\.[0-9]+)?)$",
+        trimspace(var.checkpoint_image_id),
+      ))
+    )
+    error_message = "checkpoint_image_id must be empty or a managed image, Compute Gallery image definition, or Compute Gallery image version resource ID."
+  }
+}
+
 variable "checkpoint_vm_size" {
   description = "Check Point standalone VM size. The Gen1 mgmt-byol image cannot run on Gen2-only Dv6 sizes."
   type        = string

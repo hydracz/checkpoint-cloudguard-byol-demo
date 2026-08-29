@@ -69,3 +69,19 @@ lifecycle {
 Single Gateway module 增加 `vnet_id` output，透传下层 VNet module 的资源 ID。
 根 module 使用该 ID 创建 spoke-to-hub peering，使 Terraform 直接依赖实际 hub VNet，
 避免手工拼接 ID 只依赖先创建完成的 Resource Group 而引发竞态。
+
+## Patch 5：支持已有 custom image resource ID
+
+涉及文件：
+
+- `modules/single-gateway/variables.tf`
+- `modules/single-gateway/locals.tf`
+- `modules/single-gateway/main.tf`
+
+上游只接受 Marketplace image 或 VHD URI，并在 VHD 路径内部创建 legacy managed
+image。本地增加可选 `source_image_id`，允许根 module 直接传入 generalized managed
+image、Azure Compute Gallery image definition 或 image version ID。
+
+`source_image_requires_plan` 明确区分普通开发镜像与 Marketplace 派生镜像。后者部署
+VM 时继续传入原始 Publisher、Offer 和 Plan，不能借 custom image 绕过 Marketplace
+条款。`source_image_id` 与 `source_image_vhd_uri` 互斥。

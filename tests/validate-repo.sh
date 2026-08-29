@@ -20,6 +20,7 @@ required=(
   scripts/vm-case.sh scripts/run-tests.sh scripts/query-logs.sh
   scripts/lock-worm.sh scripts/destroy.sh
   docs/architecture.md docs/drawio-architecture.md docs/network-ip-plan.md
+  docs/cloudguard-image-export.md
   docs/validated-results.md
   docs/checkpoint-cloudguard-byol-architecture.drawio
   docs/checkpoint-cloudguard-byol-test-architecture.svg
@@ -58,6 +59,11 @@ if grep -RIn \
 fi
 grep -q 'installation_type.*= "standalone"' "$ROOT/infra/checkpoint.tf"
 grep -q 'vm_os_sku.*= local.checkpoint_plan' "$ROOT/infra/checkpoint.tf"
+grep -q 'source_image_id.*= trimspace(var.checkpoint_image_id)' "$ROOT/infra/checkpoint.tf"
+grep -q 'source_image_requires_plan.*trimspace(var.checkpoint_image_id) != ""' "$ROOT/infra/checkpoint.tf"
+grep -q 'variable "checkpoint_image_id"' "$ROOT/infra/variables.tf"
+grep -q 'Marketplace must remain the default Check Point image source' "$ROOT/infra/tests/demo.tftest.hcl"
+grep -q 'example-gallery/images/checkpoint-r82-byol/versions/1.0.0' "$ROOT/configs/demo.tfvars.example"
 grep -q 'mgmt-byol' "$ROOT/infra/locals.tf"
 grep -q 'management_cidr != "0.0.0.0/0"' "$ROOT/infra/variables.tf"
 grep -q 'default-via-checkpoint' "$ROOT/infra/networking.tf"
@@ -90,6 +96,17 @@ if grep -RInE \
   '(client_secret|admin_password|ARM_CLIENT_SECRET)[[:space:]]*=[[:space:]]*"[^"]+"' \
   "$ROOT"; then
   echo "Potential committed secret found." >&2
+  exit 1
+fi
+
+if grep -RInE \
+  --include='*.tf' \
+  --include='*.tfvars.example' \
+  --include='*.md' \
+  '/subscriptions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
+  "$ROOT/README.md" "$ROOT/configs" "$ROOT/docs" "$ROOT/infra/tests" |
+  grep -v '/subscriptions/00000000-0000-0000-0000-000000000000'; then
+  echo "A real Azure subscription resource ID was found in tracked examples or documentation." >&2
   exit 1
 fi
 

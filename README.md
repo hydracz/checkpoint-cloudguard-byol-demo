@@ -1,7 +1,8 @@
 # Check Point CloudGuard Azure BYOL 独立演示
 
-本目录使用本地保存的 Check Point 官方 Terraform 模块 `v1.3.2`，从
-Azure Marketplace 部署 `standalone` CloudGuard。管理服务器、安全网关和
+本目录使用本地保存的 Check Point 官方 Terraform 模块 `v1.3.2`，默认从
+Azure Marketplace 部署 `standalone` CloudGuard，也可显式传入 generalized
+managed image 或 Azure Compute Gallery image ID。管理服务器、安全网关和
 日志服务器运行在同一台 Azure VM 上，Marketplace 计划为 `mgmt-byol`。
 许可证不写入 Terraform 配置或状态文件。模块版本、`commit`、许可证和更新方法见
 [Terraform 模块本地副本](infra/vendor/README.md)。
@@ -18,7 +19,7 @@ HTTPS Inspection、Geo-IP 和 EU 日志留存如何配合，不提供生产可�
 | 南北向和东西向覆盖 | 互联网出站、两个 Azure VNet 之间的跨区域流量都以 `10.60.1.4` 为 NVA 下一跳 |
 | 日志审计 | Check Point 日志写入 EU Log Analytics，并持续导出到 EU GRS Storage |
 | 防篡改留存 | `am-syslog` 配置 protected append Immutability Policy；客户确认后再执行不可逆锁定 |
-| Azure Marketplace BYOL | 使用 `publisher=checkpoint`、R82/R82.10 `offer` 和 `plan=mgmt-byol` |
+| Azure Marketplace BYOL | 默认使用 `publisher=checkpoint`、R82/R82.10 `offer` 和 `plan=mgmt-byol`；Marketplace 派生 custom image 继续携带同一 plan |
 
 ## 阅读对象与目标
 
@@ -80,12 +81,14 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
 
 需求、配置和证据的对应关系见 [需求与检查条件](REQUIREMENTS.md)、
 [技术要求映射](docs/requirement-mapping.md)、[网络与 IP 规划](docs/network-ip-plan.md)、
+[CloudGuard 镜像导出与创建](docs/cloudguard-image-export.md)、
+[可选：从本地 tar.gz 发布 Azure Compute Gallery 镜像](docs/upload-vhd-to-compute-gallery.md)、
 [现场验证记录](docs/validated-results.md) 和 [draw.io 架构图说明](docs/drawio-architecture.md)。
 
 ## 前置条件
 
 - Terraform `>= 1.9`、Azure CLI、`jq`、OpenSSL、Python 3。
-- 目标 Azure 订阅的 Contributor 权限，以及接受 Marketplace 条款的权限。订阅的商务市场必须允许购买 Check Point `check-point-cg-r82`/`check-point-cg-r8210` Offer；该 Offer 不向 `CN` 商务市场销售。
+- 目标 Azure 订阅的 Contributor 权限，以及接受 Marketplace 条款的权限。即使使用 Marketplace 派生 custom image，目标订阅仍须接受同一条款。订阅的商务市场必须允许购买 Check Point `check-point-cg-r82`/`check-point-cg-r8210` Offer；该 Offer 不向 `CN` 商务市场销售。
 - 交互部署默认复用 `az login`；CI 可选使用完整的 Service Principal（tenant/client/secret 三项缺一不可）。
 - Check Point BYOL entitlement。若订阅/试用状态不允许安装 Application Control、URL Filtering 或 HTTPS Inspection policy，基础设施仍可部署，但策略安装会明确失败。
 - 一个 OpenSSH 公钥和受限的管理公网 CIDR。
@@ -159,6 +162,7 @@ collector_vm_size  = "Standard_D4ls_v6"
 | `company_domain` | 否 | string | `example.org` | 演示 HTTPS Inspection CA 的 `issued-by`；可填写客户批准的公司域名 |
 | `location` | 否 | string | `westeurope` | Hub、Check Point、主工作负载和日志资源所在区域 |
 | `remote_location` | 否 | string | `northeurope` | 远端工作负载所在区域，必须与 `location` 不同 |
+| `checkpoint_image_id` | 否 | string | `""` | generalized managed image、Compute Gallery image definition 或 version ID；空值使用 Marketplace |
 | `checkpoint_vm_size` | 否 | string | `Standard_D8s_v5` | Check Point VM 规格；受镜像代际和实时容量限制 |
 | `workload_vm_size` | 否 | string | `Standard_D4ls_v6` | 两台工作负载 VM 的规格 |
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
@@ -166,6 +170,37 @@ collector_vm_size  = "Standard_D4ls_v6"
 | `enable_tls_inspection` | 否 | bool | `true` | 是否创建演示 CA 和 HTTPS Inspection 规则 |
 
 不同客户只需修改 `tfvars` 中的订阅、网络、命名和策略参数，不需要修改 Terraform 源码。
+
+### 使用自定义 Check Point 镜像
+
+```hcl
+checkpoint_image_id = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG>/providers/Microsoft.Compute/galleries/<GALLERY>/images/<DEFINITION>/versions/<VERSION>"
+```
+
+自定义镜像必须满足以下条件：
+
+1. `Generalized`、Linux、x64、Hyper-V Gen1，且 image version 已复制到 `location`。
+2. 从 Marketplace 派生的 Compute Gallery definition 必须保留
+   `checkpoint:check-point-cg-r82:mgmt-byol` purchase plan。部署脚本仍会接受
+   Marketplace 条款并把 plan 写入 VM；该方式不能绕过客户订阅的 Marketplace
+   Policy、条款或商务市场限制。
+3. 只能从**未启动的 Marketplace 基础镜像**或 Check Point 明确支持的 generalized
+   VHD 创建。不要捕获已配置网关：specialized image 会保留 hostname、用户、
+   SSH keys、证书、SIC/管理状态、许可证状态和日志。
+4. Azure `waagent -deprovision+user` 只清理 Azure provisioning 和最后一个用户，
+   Microsoft 明确说明它不保证清除全部敏感信息；Check Point 没有在上述导出文档中
+   提供已初始化 Gaia 网关的完整 generalization/sanitization 流程。
+5. 技术上的 VHD 导出和 Gallery 共享不等于获得跨客户分发权。跨租户或跨客户共享前，
+   应按服务订单/EULA 向 Check Point 或授权合作伙伴取得书面确认。
+
+参考：
+[Check Point VHD 导出](https://sc1.checkpoint.com/documents/IaaS/WebAdminGuides/EN/CP_CloudGuard_Network_for_Azure_HA_Cluster/Content/Topics-Azure-HA/Export_Image.htm)、
+[Azure generalized/specialized images](https://learn.microsoft.com/azure/virtual-machines/shared-image-galleries#generalized-and-specialized-images)、
+[Marketplace purchase plan](https://learn.microsoft.com/azure/virtual-machines/marketplace-images)。
+完整命令和验收步骤见
+[CloudGuard Marketplace 镜像导出与 Custom Image Runbook](docs/cloudguard-image-export.md)。
+如果已经持有本地 `tar.gz`，可选阅读
+[从本地 tar.gz 发布 Azure Compute Gallery 镜像](docs/upload-vhd-to-compute-gallery.md)。
 
 ### 3. 准备 SSH key
 
