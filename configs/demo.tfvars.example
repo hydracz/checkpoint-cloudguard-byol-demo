@@ -17,6 +17,10 @@ checkpoint_os_version = "R82"
 # checkpoint_image_requires_plan = true
 # For a planless R81 custom image, also set checkpoint_os_version = "R81"
 # and enable_tls_inspection = false.
+# After completing the documented R81 SmartConsole HTTPS bootstrap, use:
+# enable_tls_inspection       = true
+# r81_tls_manually_configured = true
+# and export CHECKPOINT_TLS_CA_FILE=/path/to/public-outbound-ca.cer.
 
 # Check Point mgmt-byol is Gen1, while Dv6 is Gen2-only.
 checkpoint_vm_size = "Standard_D8s_v5" # 8 vCPU / 32 GiB

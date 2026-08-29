@@ -7,6 +7,7 @@ source "$ROOT/scripts/lib.sh"
 
 load_runtime_environment
 require_cmd az
+require_cmd openssl
 require_cmd python3
 
 outputs="$("$TERRAFORM" -chdir="$INFRA" output -json)"
@@ -22,7 +23,7 @@ SUBSCRIPTION="$(output_value subscription_id)"
 COMPANY_DOMAIN="$(output_value company_domain)"
 RG="$(output_value resource_group_name)"
 GATEWAY_VM="$(output_value checkpoint_vm_name)"
-GATEWAY_NSG_ID="$(output_value checkpoint_nsg_id)"
+GATEWAY_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
 PACKAGE_NAME="$(output_value policy_package_name)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 EU_VM="$(output_value eu_workload_vm_name)"
@@ -47,12 +48,24 @@ IMAGE_PLAN="$(output_value checkpoint_plan)"
 LOG_INGEST_WAIT_SECONDS="${LOG_INGEST_WAIT_SECONDS:-1800}"
 LOG_INGEST_RETRY_SECONDS="${LOG_INGEST_RETRY_SECONDS:-60}"
 RECONCILE_SSH_RULE="${CHECKPOINT_RECONCILE_SSH_RULE:-false}"
+EXPECTED_CA_ISSUER="$COMPANY_DOMAIN"
 [[ "$LOG_INGEST_WAIT_SECONDS" =~ ^[0-9]+$ ]] ||
   die "LOG_INGEST_WAIT_SECONDS must be a non-negative integer."
 [[ "$LOG_INGEST_RETRY_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
   die "LOG_INGEST_RETRY_SECONDS must be a positive integer."
 [[ "$RECONCILE_SSH_RULE" == "true" || "$RECONCILE_SSH_RULE" == "false" ]] ||
   die "CHECKPOINT_RECONCILE_SSH_RULE must be true or false."
+if [[ "$TLS_ENABLED" == "true" && -f "$LOCAL_DIR/checkpoint-demo-ca.pem" ]]; then
+  EXPECTED_CA_ISSUER="$(
+    openssl x509 \
+      -in "$LOCAL_DIR/checkpoint-demo-ca.pem" \
+      -noout \
+      -subject \
+      -nameopt RFC2253 |
+      sed 's/^subject=//'
+  )"
+fi
+EXPECTED_CA_ISSUER_ARG="base64:$(printf '%s' "$EXPECTED_CA_ISSUER" | openssl base64 -A)"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$ROOT/evidence/$STAMP"
@@ -142,7 +155,11 @@ run_vm_case() {
     --name "$vm" \
     --command-id RunShellScript \
     --scripts @"$ROOT/scripts/vm-case.sh" \
-    --parameters "$case_id" "$peer_ip" "$TLS_ENABLED" "$COMPANY_DOMAIN" \
+    --parameters \
+    "arg1=$case_id" \
+    "arg2=$peer_ip" \
+    "arg3=$TLS_ENABLED" \
+    "arg4=$EXPECTED_CA_ISSUER_ARG" \
     --only-show-errors \
     -o json >"$evidence" 2>&1; then
     status="$(grep -o "__DEMO_RESULT=${case_id}:\\(PASS\\|FAIL\\|SKIP\\)" "$evidence" | tail -1 | cut -d: -f2)"
@@ -178,6 +195,7 @@ gateway_inspected=false
 ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$HOME/.ssh/id_ed25519}"
 if [[ "$RECONCILE_SSH_RULE" == "true" ]]; then
   ensure_restricted_ssh_nsg_rule "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDR"
+  trap remove_temporary_restricted_ssh_nsg_rule EXIT
 fi
 if [[ -f "$ssh_key" ]] &&
   ssh -i "$ssh_key" \
@@ -195,7 +213,7 @@ elif az vm run-command invoke \
     --name "$GATEWAY_VM" \
     --command-id RunShellScript \
     --scripts @"$ROOT/scripts/inspect-checkpoint.sh" \
-    --parameters "$PACKAGE_NAME" "$CHECKPOINT_RELEASE" \
+    --parameters "arg1=$PACKAGE_NAME" "arg2=$CHECKPOINT_RELEASE" \
     --only-show-errors \
     -o json >"$policy_evidence" 2>&1; then
   gateway_inspected=true
@@ -336,3 +354,5 @@ if awk -F '|' '$2 != "PASS" && $2 != "SKIP" { failed = 1 } END { exit(failed ? 0
   echo "One or more required tests did not pass. See $OUT/summary.json." >&2
   exit 1
 fi
+remove_temporary_restricted_ssh_nsg_rule
+trap - EXIT

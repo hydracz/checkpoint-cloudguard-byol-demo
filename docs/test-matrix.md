@@ -27,5 +27,7 @@
 
 `summary.json` 原样记录 `SKIP` 和 `PENDING_INGESTION`。脚本默认等待日志摄取最多
 30 分钟；任何 `FAIL` 或 `PENDING_INGESTION` 都返回非零，只有未启用功能的 `SKIP`
-不影响退出码。R81 自动化要求关闭 TLS，T07 因此为预期 `SKIP`。Geo 的实际国家判定需要客户批准、可控且不会造成滥用的测试端点；
+不影响退出码。R81 尚未完成 SmartConsole TLS bootstrap 时 T07 为预期 `SKIP`；
+设置 `r81_tls_manually_configured=true` 并提供 `CHECKPOINT_TLS_CA_FILE` 后，T07 仍须
+以实际 issuer 通过。Geo 的实际国家判定需要客户批准、可控且不会造成滥用的测试端点；
 T08 只检查策略对象，不能替代流量检查。

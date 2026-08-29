@@ -169,7 +169,8 @@ collector_vm_size  = "Standard_D4ls_v6"
 | `workload_vm_size` | 否 | string | `Standard_D4ls_v6` | 两台工作负载 VM 的规格 |
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
 | `blocked_countries` | 否 | list(string) | `["China"]` | Check Point Repository 中的英文国家名 |
-| `enable_tls_inspection` | 否 | bool | `true` | 是否创建演示 CA 和 HTTPS Inspection 规则；R81 自动化必须为 `false` |
+| `enable_tls_inspection` | 否 | bool | `true` | 是否验证 HTTPS Inspection；R81 未完成 SmartConsole bootstrap 时必须为 `false` |
+| `r81_tls_manually_configured` | 否 | bool | `false` | R81 CA、Gateway setting、layer/rule 是否已通过 SmartConsole 配置 |
 
 不同客户只需修改 `tfvars` 中的订阅、网络、命名和策略参数，不需要修改 Terraform 源码。
 
@@ -181,7 +182,7 @@ collector_vm_size  = "Standard_D4ls_v6"
 | --- | --- | --- | ---: |
 | 默认 Azure Global Marketplace R82/R82.10 | `R82`/`R8210` | 空 | 忽略（请求始终带 Plan） |
 | Marketplace 派生 R82/R82.10 custom image | 与镜像一致 | 精确 definition/version ID | `true` |
-| 已获授权的 R81 无 Plan custom image | `R81` | 精确 definition/version ID | `false`；另设 `enable_tls_inspection=false` |
+| 已获授权的 R81 无 Plan custom image | `R81` | 精确 definition/version ID | `false`；TLS 默认关闭，或先做 SmartConsole bootstrap |
 
 ```hcl
 checkpoint_image_id            = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<IMAGE_RG>/providers/Microsoft.Compute/galleries/<GALLERY>/images/<DEFINITION>/versions/<VERSION>"
@@ -199,11 +200,13 @@ checkpoint_image_requires_plan = true
    `purchasePlan` 为空的 R81 镜像设置
    `checkpoint_image_requires_plan = false`。R82/R82.10 custom image 必须保留原始
    Plan。该开关只控制 VM 请求，不会移除 Azure 已识别的 Marketplace 来源。
-   使用无 Plan R81 镜像时，同时设置 `checkpoint_os_version = "R81"` 和
-   `enable_tls_inspection = false`。R81 GA 的 Management API 1.7 没有自动创建
-   Outbound Inspection CA 或设置 Gateway HTTPS Inspection 的公开命令；脚本不使用
-   未支持的 `dbedit`/私有 API 修改证书数据库。R82/R82.10 继续执行完整自动 TLS
-   Inspection 流程。
+   使用无 Plan R81 镜像时，同时设置 `checkpoint_os_version = "R81"`。R81 GA 的
+   Management API 1.7 没有自动创建 Outbound Inspection CA 或设置 Gateway HTTPS
+   Inspection 的公开命令，因此默认设置 `enable_tls_inspection = false`。也可按
+   [策略 runbook](docs/policy-runbook.md) 完成 SmartConsole bootstrap，再设置
+   `r81_tls_manually_configured = true` 并通过 `CHECKPOINT_TLS_CA_FILE` 继续安装客户端
+   trust 和执行 T07。脚本不使用未支持的 `dbedit`/私有 API。R82/R82.10 继续执行完整
+   自动 TLS Inspection 流程。
 3. 只能从**未启动的 Marketplace 基础镜像**或 Check Point 明确支持的 generalized
    VHD 创建。不要捕获已配置网关：specialized image 会保留 hostname、用户、
    SSH keys、证书、SIC/管理状态、许可证状态和日志。
@@ -294,8 +297,8 @@ Management API 和 Log Exporter 命令最多 30 分钟，避免首次启动尚�
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
 若订阅自动删除 Terraform 创建的 `/32` SSH NSG rule，可在确认符合客户 Azure
 Policy 后显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只恢复相同
-`management_cidr` 的 Terraform-managed rule，不会创建开放来源。该开关同时用于
-策略配置和 T08/T09/T15 现场检查。
+`management_cidr` 的临时 rule，不会创建开放来源，并在操作结束时删除，避免留下
+Terraform state 冲突。该开关同时用于策略配置和 T08/T09/T15 现场检查。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
 

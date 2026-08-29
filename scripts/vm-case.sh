@@ -5,6 +5,12 @@ CASE_ID="${1:?case ID is required}"
 PEER_IP="${2:-}"
 TLS_ENABLED="${3:-false}"
 EXPECTED_CA_ISSUER="${4:-example.org}"
+if [[ "$EXPECTED_CA_ISSUER" == base64:* ]]; then
+  EXPECTED_CA_ISSUER="$(
+    printf '%s' "${EXPECTED_CA_ISSUER#base64:}" |
+      base64 -d
+  )"
+fi
 
 result() {
   printf '__DEMO_RESULT=%s:%s\n' "$CASE_ID" "$1"
@@ -61,7 +67,7 @@ case "$CASE_ID" in
         -connect www.microsoft.com:443 \
         -servername www.microsoft.com \
         </dev/null 2>/dev/null |
-        openssl x509 -noout -issuer 2>/dev/null || true
+        openssl x509 -noout -issuer -nameopt RFC2253 2>/dev/null || true
     )"
     printf '%s\n' "$issuer"
     if grep -Fqi "$EXPECTED_CA_ISSUER" <<<"$issuer"; then

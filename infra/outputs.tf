@@ -160,6 +160,11 @@ output "enable_tls_inspection" {
   value = var.enable_tls_inspection
 }
 
+output "r81_tls_manually_configured" {
+  value       = var.r81_tls_manually_configured
+  description = "Whether R81 HTTPS Inspection was bootstrapped through SmartConsole."
+}
+
 output "enable_inbound_demo" {
   value = var.enable_inbound_demo
 }

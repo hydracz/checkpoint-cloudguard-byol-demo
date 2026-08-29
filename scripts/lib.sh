@@ -21,6 +21,11 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+RESTRICTED_SSH_RULE_CREATED="${RESTRICTED_SSH_RULE_CREATED:-false}"
+RESTRICTED_SSH_SUBSCRIPTION=""
+RESTRICTED_SSH_RESOURCE_GROUP=""
+RESTRICTED_SSH_NSG_NAME=""
+
 ensure_restricted_ssh_nsg_rule() {
   local subscription="$1" resource_group="$2" nsg_id="$3" management_cidr="$4"
   local gateway_nsg_name="${nsg_id##*/}"
@@ -48,6 +53,27 @@ ensure_restricted_ssh_nsg_rule() {
       --description "Restricted SSH access" \
       --only-show-errors \
       -o none
+    RESTRICTED_SSH_RULE_CREATED=true
+    RESTRICTED_SSH_SUBSCRIPTION="$subscription"
+    RESTRICTED_SSH_RESOURCE_GROUP="$resource_group"
+    RESTRICTED_SSH_NSG_NAME="$gateway_nsg_name"
+  fi
+}
+
+remove_temporary_restricted_ssh_nsg_rule() {
+  if [[ "$RESTRICTED_SSH_RULE_CREATED" == "true" ]]; then
+    echo "Removing the temporary source-restricted SSH NSG rule."
+    if ! az network nsg rule delete \
+      --subscription "$RESTRICTED_SSH_SUBSCRIPTION" \
+      --resource-group "$RESTRICTED_SSH_RESOURCE_GROUP" \
+      --nsg-name "$RESTRICTED_SSH_NSG_NAME" \
+      --name AllowRestrictedSSH \
+      --only-show-errors \
+      -o none; then
+      echo "ERROR: Failed to remove temporary SSH rule from $RESTRICTED_SSH_NSG_NAME." >&2
+      return 1
+    fi
+    RESTRICTED_SSH_RULE_CREATED=false
   fi
 }
 

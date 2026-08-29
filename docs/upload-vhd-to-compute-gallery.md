@@ -372,8 +372,10 @@ checkpoint_image_requires_plan = true
 
 R82/R82.10 Marketplace 派生镜像必须使用 `true`。只有来源本身不是 Marketplace、
 且已获 Check Point 授权的 R81 镜像才使用 `false`；R81 无 Plan 镜像还必须同时设置
-`checkpoint_os_version = "R81"` 和 `enable_tls_inspection = false`。该开关不会
-清除 Azure 已识别的 Marketplace 来源。
+`checkpoint_os_version = "R81"`。未完成 SmartConsole HTTPS Inspection bootstrap
+时设置 `enable_tls_inspection = false`；完成后按 policy runbook 使用
+`r81_tls_manually_configured=true` 和 `CHECKPOINT_TLS_CA_FILE`。该开关不会清除 Azure
+已识别的 Marketplace 来源。
 
 先运行 `./scripts/preflight.sh --var-file configs/demo.tfvars`，再部署。至少在一个目标
 region 做非生产启动测试，确认新 VM 生成新的 hostname、网络身份和 host keys，

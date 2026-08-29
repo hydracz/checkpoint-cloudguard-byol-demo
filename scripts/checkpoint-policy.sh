@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 18 ]]; then
-  echo "Expected 18 arguments; received $#." >&2
+if [[ $# -ne 19 ]]; then
+  echo "Expected 19 arguments; received $#." >&2
   exit 2
 fi
 
@@ -24,6 +24,7 @@ PUBLIC_IP="${15}"
 MANAGEMENT_CIDR="${16}"
 COMPANY_DOMAIN="${17}"
 CHECKPOINT_RELEASE="${18}"
+R81_TLS_MANUAL="${19}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
@@ -199,7 +200,8 @@ for nat_rule_name in \
   fi
 done
 
-if api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
+if [[ "$R81_TLS_MANUAL" != "true" ]] &&
+  api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
   HTTPS_RULEBASE="$(api show https-rulebase name "$HTTPS_LAYER" limit 500 details-level standard)"
   while IFS= read -r uid; do
     [[ -n "$uid" ]] && api delete https-rule layer "$HTTPS_LAYER" uid "$uid" >/dev/null
@@ -251,13 +253,18 @@ ensure_host "$EU_WEB_HOST" "$EU_HOST_IP"
 WEB_SERVICE="HTTP_proxy"
 
 if api show group name "$PROTECTED_GROUP" >/dev/null 2>&1; then
-  api delete group name "$PROTECTED_GROUP" >/dev/null
+  api set group \
+    name "$PROTECTED_GROUP" \
+    members.1 "$EU_NETWORK" \
+    members.2 "$REMOTE_NETWORK" \
+    >/dev/null
+else
+  api add group \
+    name "$PROTECTED_GROUP" \
+    members.1 "$EU_NETWORK" \
+    members.2 "$REMOTE_NETWORK" \
+    >/dev/null
 fi
-api add group \
-  name "$PROTECTED_GROUP" \
-  members.1 "$EU_NETWORK" \
-  members.2 "$REMOTE_NETWORK" \
-  >/dev/null
 
 if api show application-site name "$BLOCKED_URLS_OBJECT" >/dev/null 2>&1; then
   api delete application-site name "$BLOCKED_URLS_OBJECT" >/dev/null
@@ -356,14 +363,13 @@ add_access_rule \
   action Accept track.type "Extended Log" install-on.1 "$MANAGED_GATEWAY_NAME"
 
 if [[ "$INBOUND_ENABLED" == "true" ]]; then
-  ensure_network "$INBOUND_SOURCE_OBJECT" "${INBOUND_SOURCE_CIDR%/*}" "${INBOUND_SOURCE_CIDR#*/}"
+  inbound_source_object="$INBOUND_SOURCE_OBJECT"
+  if [[ "$INBOUND_SOURCE_CIDR" == "$MANAGEMENT_CIDR" ]]; then
+    inbound_source_object="$MANAGEMENT_NETWORK"
+  else
+    ensure_network "$INBOUND_SOURCE_OBJECT" "${INBOUND_SOURCE_CIDR%/*}" "${INBOUND_SOURCE_CIDR#*/}"
+  fi
   ensure_service_tcp "$INBOUND_SERVICE" "18080"
-  add_access_rule \
-    layer "$ACCESS_LAYER" position 1 \
-    name "${RULE_PREFIX}Restricted North South Inbound" \
-    source.1 "$INBOUND_SOURCE_OBJECT" destination.1 "$MANAGED_GATEWAY_NAME" \
-    service.1 "$INBOUND_SERVICE" \
-    action Accept track.type "Extended Log" install-on.1 "$MANAGED_GATEWAY_NAME"
 
   api add nat-rule \
     package "$PACKAGE_NAME" position bottom \
@@ -447,6 +453,15 @@ done
 api "${geo_outbound[@]}" >/dev/null
 api "${geo_inbound[@]}" >/dev/null
 
+if [[ "$INBOUND_ENABLED" == "true" ]]; then
+  add_access_rule \
+    layer "$ACCESS_LAYER" position 1 \
+    name "${RULE_PREFIX}Restricted North South Inbound" \
+    source.1 "$inbound_source_object" destination.1 "$MANAGED_GATEWAY_NAME" \
+    service.1 "$INBOUND_SERVICE" \
+    action Accept track.type "Extended Log" install-on.1 "$MANAGED_GATEWAY_NAME"
+fi
+
 add_access_rule \
   layer "$ACCESS_LAYER" position 1 \
   name "${RULE_PREFIX}Allow Restricted Management SSH" \
@@ -463,54 +478,58 @@ add_access_rule \
 
 CA_PUBLIC_B64=""
 if [[ "$TLS_ENABLED" == "true" ]]; then
-  if certificate_json="$(api show outbound-inspection-certificate name "$CERTIFICATE_NAME" details-level full 2>/dev/null)"; then
-    :
+  if [[ "$CHECKPOINT_RELEASE" == "R81" && "$R81_TLS_MANUAL" == "true" ]]; then
+    log "Preserving the R81 HTTPS Inspection configuration bootstrapped in SmartConsole."
   else
-    valid_from="$(date -u +%Y-%m-%d)"
-    valid_to="$(date -u -d '+365 days' +%Y-%m-%d)"
-    certificate_password_b64="$(
-      openssl rand -hex 6 |
-        tr -d '\n' |
+    if certificate_json="$(api show outbound-inspection-certificate name "$CERTIFICATE_NAME" details-level full 2>/dev/null)"; then
+      :
+    else
+      valid_from="$(date -u +%Y-%m-%d)"
+      valid_to="$(date -u -d '+365 days' +%Y-%m-%d)"
+      certificate_password_b64="$(
+        openssl rand -hex 6 |
+          tr -d '\n' |
+          base64 |
+          tr -d '\n'
+      )"
+      certificate_json="$(api add outbound-inspection-certificate \
+        name "$CERTIFICATE_NAME" \
+        issued-by "$COMPANY_DOMAIN" \
+        base64-password "$certificate_password_b64" \
+        valid-from "$valid_from" \
+        valid-to "$valid_to" \
+        is-default true)"
+    fi
+    CA_PUBLIC_B64="$(
+      printf '%s' "$certificate_json" |
+        jq -e -r '."base64-public-certificate"' |
         base64 |
         tr -d '\n'
     )"
-    certificate_json="$(api add outbound-inspection-certificate \
-      name "$CERTIFICATE_NAME" \
-      issued-by "$COMPANY_DOMAIN" \
-      base64-password "$certificate_password_b64" \
-      valid-from "$valid_from" \
-      valid-to "$valid_to" \
-      is-default true)"
-  fi
-  CA_PUBLIC_B64="$(
-    printf '%s' "$certificate_json" |
-      jq -e -r '."base64-public-certificate"' |
-      base64 |
-      tr -d '\n'
-  )"
-  api set simple-gateway uid "$GATEWAY_UID" enable-https-inspection true >/dev/null
+    api set simple-gateway uid "$GATEWAY_UID" enable-https-inspection true >/dev/null
 
-  if ! api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
-    api add https-layer name "$HTTPS_LAYER" layer-type outbound >/dev/null
-  fi
-  api set package \
-    name "$PACKAGE_NAME" \
-    https-inspection-layers.outbound-https-layer "$HTTPS_LAYER" \
-    >/dev/null
+    if ! api show https-layer name "$HTTPS_LAYER" >/dev/null 2>&1; then
+      api add https-layer name "$HTTPS_LAYER" layer-type outbound >/dev/null
+    fi
+    api set package \
+      name "$PACKAGE_NAME" \
+      https-inspection-layers.outbound-https-layer "$HTTPS_LAYER" \
+      >/dev/null
 
-  api add https-rule \
-    layer "$HTTPS_LAYER" position 1 \
-    name "${RULE_PREFIX}Inspect Protected Egress" \
-    source.1 "$PROTECTED_GROUP" \
-    destination.1 Internet \
-    service.1 "HTTPS default services" \
-    site-category.1 Any \
-    blade.1 "Application Control" \
-    blade.2 "Url Filtering" \
-    action Inspect \
-    track Log \
-    install-on.1 "$MANAGED_GATEWAY_NAME" \
-    >/dev/null
+    api add https-rule \
+      layer "$HTTPS_LAYER" position 1 \
+      name "${RULE_PREFIX}Inspect Protected Egress" \
+      source.1 "$PROTECTED_GROUP" \
+      destination.1 Internet \
+      service.1 "HTTPS default services" \
+      site-category.1 Any \
+      blade.1 "Application Control" \
+      blade.2 "Url Filtering" \
+      action Inspect \
+      track Log \
+      install-on.1 "$MANAGED_GATEWAY_NAME" \
+      >/dev/null
+  fi
 elif [[ "$CHECKPOINT_RELEASE" != "R81" ]]; then
   api set simple-gateway uid "$GATEWAY_UID" enable-https-inspection false >/dev/null
 fi

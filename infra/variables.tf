@@ -292,8 +292,26 @@ variable "enable_tls_inspection" {
   default     = true
 
   validation {
-    condition     = var.checkpoint_os_version != "R81" || !var.enable_tls_inspection
-    error_message = "R81 Management API 1.7 cannot automate the outbound HTTPS Inspection CA or gateway setting. Set enable_tls_inspection=false, or use R82/R8210 for automated TLS inspection."
+    condition = (
+      (
+        var.checkpoint_os_version != "R81" ||
+        !var.enable_tls_inspection ||
+        var.r81_tls_manually_configured
+      ) &&
+      (!var.r81_tls_manually_configured || var.enable_tls_inspection)
+    )
+    error_message = "R81 Management API 1.7 cannot automate the outbound HTTPS Inspection CA or gateway setting. Set enable_tls_inspection=false, or set r81_tls_manually_configured=true after completing the documented SmartConsole bootstrap."
+  }
+}
+
+variable "r81_tls_manually_configured" {
+  description = "Assert that the R81 outbound CA, gateway HTTPS Inspection setting, layer, and Inspect rule were configured in SmartConsole. Requires CHECKPOINT_TLS_CA_FILE when installing workload trust."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.r81_tls_manually_configured || var.checkpoint_os_version == "R81"
+    error_message = "r81_tls_manually_configured=true is valid only for R81."
   }
 }
 

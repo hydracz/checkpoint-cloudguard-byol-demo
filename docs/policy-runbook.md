@@ -20,11 +20,11 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 
 1. Allow Gateway Services。
 2. Allow Restricted Management SSH。
-3. Block Geo Inbound。
-4. Block Geo Outbound。
-5. Block DNS Domains。
-6. Block Domains URLs and Applications。
-7. 可选 Restricted North South Inbound。
+3. 可选 Restricted North South Inbound。
+4. Block Geo Inbound。
+5. Block Geo Outbound。
+6. Block DNS Domains。
+7. Block Domains URLs and Applications。
 8. Allow Inspected East West Web。
 9. Allow Web and DNS Egress。
 10. Cleanup Drop。
@@ -37,6 +37,11 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 `CloudGuard Demo - Allow Restricted Management SSH` 与 Azure NSG 使用同一个
 `management_cidr`，目标只包含 Gateway object。Policy 安装后，其他公网来源
 不能访问 SSH。
+
+可选入站规则是 Geo Inbound 前的窄例外：它同时要求 Azure NSG 和 Check Point
+Policy 命中同一个 `inbound_demo_source_cidr`，且只开放 TCP/18080。这样获批测试
+来源即使位于 `blocked_countries` 也能执行 T13，其他该国家/地区流量仍由 Geo rule
+阻断。
 
 `CloudGuard Demo - Allow Gateway Services` 位于规则库最顶部，允许 Gateway object
 自身发起 HTTP、HTTPS、DNS 和 syslog，用于 Azure metadata/agent、
@@ -69,11 +74,41 @@ Gateway 执行 `install-policy`。
 - T07 检查网站叶子证书 issuer，而不是只读取策略对象。
 
 R81 GA 的 Management API 1.7 不公开 `add-outbound-inspection-certificate`，也不公开
-R82 使用的 Gateway HTTPS Inspection 设置参数。因此 R81 无 Plan 自动化要求
-`enable_tls_inspection=false`：T06 改用明文 HTTP 路径继续验证 URL Filtering，T07
-明确记录 `SKIP`。脚本不会使用未支持的 `dbedit` 或私有 SmartConsole API 修改证书
-数据库。需要自动验证 TLS 解密时使用 R82/R82.10；若必须在 R81 手工配置，应由客户
-按官方 SmartConsole 流程创建/导入 CA，并单独完成证书治理与流量验证。
+R82 使用的 Gateway HTTPS Inspection 设置参数。默认
+`enable_tls_inspection=false`：T06 改用明文 HTTP path 验证 URL Filtering，T07
+记录 `SKIP`。R81 Jumbo 只提升到 API 1.7.1，仍不补齐这些接口。
+
+厂商支持的 R81 非 API 路径是 SmartConsole：
+
+1. 编辑 Gateway → HTTPS Inspection，Create/Import outbound CA，并 Export public CA。
+2. 启用 Gateway HTTPS Inspection。
+3. 在 package 启用 Access Control & HTTPS Inspection，添加 Bypass/Inspect rules。
+4. Publish 并 Install policy。
+
+完成后设置：
+
+```hcl
+enable_tls_inspection       = true
+r81_tls_manually_configured = true
+```
+
+再执行：
+
+```bash
+export CHECKPOINT_TLS_CA_FILE="<SMARTCONSOLE_EXPORTED_PUBLIC_CA>"
+./scripts/plan.sh --var-file configs/demo.tfvars
+terraform -chdir=infra apply -input=false -auto-approve .local/plan.tfplan
+./scripts/configure-policy.sh
+./scripts/run-tests.sh
+```
+
+脚本支持 PEM/DER 公钥证书，安装 workload trust，并保留 SmartConsole 管理的 R81 CA、
+Gateway setting 和 HTTPS rules。T07 从该 public CA 的 RFC2253 subject 推导期望
+issuer，仍必须验证实际流量。脚本不会使用未支持的
+`dbedit`、`set generic-object`、私有 endpoint 或直接数据库修改。
+
+R81.20/API 1.9 可导入外部 P12 并启用 Gateway，但 public CA 仍应由企业 PKI 另行保留；
+R82/API 2 才是当前完整的 headless create/export 路径。
 
 R81 对 custom Application/Site 的普通 URL pattern 匹配与 R82 不一致，脚本会把
 R81 pattern 转义为正则表达式。对于 `blocked_urls` 中不含 path 的纯域名，还会创建
@@ -110,8 +145,9 @@ Export Rule。
   Exporter 命令最多 30 分钟，再回退到 Azure Run Command；可用
   `CHECKPOINT_SSH_WAIT_SECONDS` 和 `CHECKPOINT_SSH_RETRY_SECONDS` 调整。
 - 若订阅自动删除 Terraform-managed SSH rule，在客户确认允许恢复后设置
-  `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本只创建来源为 `management_cidr`、
-  目的端口 22 的同名 rule；默认 `false`，不会自动对抗组织 Policy。
+  `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本只临时创建来源为 `management_cidr`、
+  目的端口 22 的同名 rule，并在操作结束时删除，避免下次 Terraform apply 发生
+  state 冲突；默认 `false`，不会自动对抗组织 Policy。
 - `configure-policy.sh` 可重复执行；只重建 `CloudGuard Demo - ` 规则和
   NAT 规则以及 `CloudGuard-*` 演示对象。
 - 修改 Geo/Application/URL 清单后重新 `plan/apply`，再运行 `configure-policy.sh`。

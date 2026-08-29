@@ -170,6 +170,31 @@ run "invalid_r81_tls_automation" {
   expect_failures = [var.enable_tls_inspection]
 }
 
+run "r81_manual_tls_bootstrap" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R81"
+    checkpoint_image_id            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-image-rg/providers/Microsoft.Compute/galleries/example-gallery/images/checkpoint-r81-planless/versions/1.0.0"
+    checkpoint_image_requires_plan = false
+    enable_log_data_export         = false
+    enable_tls_inspection          = true
+    r81_tls_manually_configured    = true
+  }
+
+  assert {
+    condition     = var.enable_tls_inspection && var.r81_tls_manually_configured
+    error_message = "R81 manual TLS bootstrap must keep T07 enabled after SmartConsole configuration."
+  }
+}
+
 run "invalid_r81_marketplace_source" {
   command = plan
 

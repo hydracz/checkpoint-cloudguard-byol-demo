@@ -24,7 +24,7 @@ COMPANY_DOMAIN="$(output_value company_domain)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 RG="$(output_value resource_group_name)"
 GATEWAY_VM="$(output_value checkpoint_vm_name)"
-GATEWAY_NSG_ID="$(output_value checkpoint_nsg_id)"
+GATEWAY_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
 GATEWAY_NAME="$(output_value checkpoint_gateway_name)"
 PACKAGE_NAME="$(output_value policy_package_name)"
 FRONTEND_IP="$(output_value checkpoint_frontend_private_ip)"
@@ -35,6 +35,7 @@ REMOTE_CIDR="$(output_value remote_spoke_address_space)"
 EU_HOST_IP="$(output_value eu_workload_private_ip)"
 PUBLIC_IP="$(output_value checkpoint_public_ip)"
 TLS_ENABLED="$(output_value enable_tls_inspection)"
+R81_TLS_MANUAL="$(printf '%s' "$outputs" | jq -r '.r81_tls_manually_configured.value // false')"
 INBOUND_ENABLED="$(output_value enable_inbound_demo)"
 INBOUND_SOURCE_CIDR="$(output_value inbound_demo_source_cidr)"
 INBOUND_SOURCE_CIDR="${INBOUND_SOURCE_CIDR:-disabled}"
@@ -43,6 +44,19 @@ APPLICATIONS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_applications.value'
 URLS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_urls.value' | openssl base64 -A)"
 
 mkdir -p "$LOCAL_DIR"
+if [[ "$TLS_ENABLED" == "true" && "$CHECKPOINT_RELEASE" == "R81" && "$R81_TLS_MANUAL" == "true" ]]; then
+  ca_file="${CHECKPOINT_TLS_CA_FILE:-}"
+  [[ -f "$ca_file" ]] ||
+    die "R81 manual TLS mode requires CHECKPOINT_TLS_CA_FILE with the SmartConsole-exported public CA."
+  if openssl x509 -in "$ca_file" -noout >/dev/null 2>&1; then
+    openssl x509 -in "$ca_file" -out "$LOCAL_DIR/checkpoint-demo-ca.pem"
+  elif openssl x509 -inform DER -in "$ca_file" -noout >/dev/null 2>&1; then
+    openssl x509 -inform DER -in "$ca_file" -out "$LOCAL_DIR/checkpoint-demo-ca.pem"
+  else
+    die "CHECKPOINT_TLS_CA_FILE must contain a PEM or DER X.509 public certificate."
+  fi
+fi
+
 policy_args=(
   "$GATEWAY_NAME"
   "$PACKAGE_NAME"
@@ -62,6 +76,7 @@ policy_args=(
   "$MANAGEMENT_CIDR"
   "$COMPANY_DOMAIN"
   "$CHECKPOINT_RELEASE"
+  "$R81_TLS_MANUAL"
 )
 
 transport="${CHECKPOINT_TRANSPORT:-auto}"
@@ -92,7 +107,10 @@ if [[ "$transport" == "ssh" && ! -f "$ssh_key" ]]; then
 fi
 
 if [[ "$transport" != "run-command" && "$reconcile_ssh_rule" == "true" ]]; then
+  [[ -n "$GATEWAY_NSG_ID" ]] ||
+    die "CHECKPOINT_RECONCILE_SSH_RULE=true requires a fresh Terraform apply that includes checkpoint_nsg_id."
   ensure_restricted_ssh_nsg_rule "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDR"
+  trap remove_temporary_restricted_ssh_nsg_rule EXIT
 fi
 
 if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
@@ -134,13 +152,19 @@ if $use_ssh; then
   message="$(cat "$LOCAL_DIR/checkpoint-policy-output.txt")"
 else
   echo "Configuring Check Point policy through Azure VM Run Command; first boot can take 20-30 minutes."
+  policy_run_command_args=()
+  policy_arg_index=1
+  for policy_arg in "${policy_args[@]}"; do
+    policy_run_command_args+=("arg${policy_arg_index}=$policy_arg")
+    policy_arg_index=$((policy_arg_index + 1))
+  done
   az vm run-command invoke \
     --subscription "$SUBSCRIPTION" \
     --resource-group "$RG" \
     --name "$GATEWAY_VM" \
     --command-id RunShellScript \
     --scripts @"$ROOT/scripts/checkpoint-policy.sh" \
-    --parameters "${policy_args[@]}" \
+    --parameters "${policy_run_command_args[@]}" \
     --only-show-errors \
     -o json >"$LOCAL_DIR/checkpoint-policy-run-command.json"
   message="$(jq -r '.value[]?.message' "$LOCAL_DIR/checkpoint-policy-run-command.json")"
@@ -150,9 +174,13 @@ grep -q 'DEMO_POLICY_STATUS=complete' <<<"$message" ||
   die "Check Point policy script did not report completion. See $LOCAL_DIR/checkpoint-policy-*."
 
 if [[ "$TLS_ENABLED" == "true" ]]; then
-  ca_b64="$(tr -d '\r' <<<"$message" | sed -n 's/^DEMO_TLS_CA_B64=//p' | tail -1)"
-  [[ -n "$ca_b64" ]] || die "HTTPS inspection was enabled but no public CA was returned."
-  printf '%s' "$ca_b64" | openssl base64 -d -A >"$LOCAL_DIR/checkpoint-demo-ca.pem"
+  if [[ "$CHECKPOINT_RELEASE" == "R81" && "$R81_TLS_MANUAL" == "true" ]]; then
+    :
+  else
+    ca_b64="$(tr -d '\r' <<<"$message" | sed -n 's/^DEMO_TLS_CA_B64=//p' | tail -1)"
+    [[ -n "$ca_b64" ]] || die "HTTPS inspection was enabled but no public CA was returned."
+    printf '%s' "$ca_b64" | openssl base64 -d -A >"$LOCAL_DIR/checkpoint-demo-ca.pem"
+  fi
   openssl x509 -in "$LOCAL_DIR/checkpoint-demo-ca.pem" -noout -subject -dates >/dev/null
 
   ca_pem_b64="$(openssl base64 -A -in "$LOCAL_DIR/checkpoint-demo-ca.pem")"
@@ -175,3 +203,5 @@ if [[ "$TLS_ENABLED" == "true" ]]; then
 else
   echo "Check Point L4/L7, Geo, routing policy, and Log Exporter configuration completed; TLS inspection is disabled."
 fi
+remove_temporary_restricted_ssh_nsg_rule
+trap - EXIT

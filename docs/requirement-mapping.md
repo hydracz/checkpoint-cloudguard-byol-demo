@@ -5,7 +5,7 @@
 | 五元组访问控制 | `checkpoint-policy.sh` 中的 Network、Host、Service 和 Access Rule | 脚本 | T03、T08 | Policy 必须安装到已授权 Gateway |
 | 域名和 URL | 自定义 `application-site`；`blocked_urls` | 脚本 | T05、T06 | HTTPS path 需要 HTTPS Inspection 才可见 |
 | 应用特征 | Application Control；`blocked_applications` | 脚本 | T08 | 默认使用内置 `P2P File Sharing` category；其他对象需要 AppWiki 已下载 |
-| TLS 解密 | R82/R82.10：Outbound Inspection Certificate、HTTPS layer/rule、演示 CA trust；R81 API 1.7 不自动配置 | 脚本 | T07 | 自动 TLS 验证使用 R82/R82.10；R81 需客户按官方流程手工配置或明确关闭 |
+| TLS 解密 | R82/R82.10 全自动；R81 SmartConsole bootstrap + 脚本安装 public CA trust | 脚本 + R81 人工步骤 | T07 | R81 GA/API 1.7 无完整 headless CA/Gateway 接口；R81.20 API 1.9 可导入外部 P12 |
 | 国家/地区 Geo-IP | Updatable Objects Repository；双向 Geo `Drop` | 脚本 | T08 | Geo 数据表示 IP 归属，不表示人员或数据的物理位置 |
 | 南北向出站 | 工作负载 `0.0.0.0/0` UDR → Gateway；Hide NAT | Terraform + 脚本 | T01、T02、T04 | 单实例不提供生产 High Availability |
 | 南北向入站 | 可选 TCP/18080 NSG、Access Rule 和 DNAT | 条件化脚本 | T13 | 默认关闭；只接受指定来源 CIDR |
