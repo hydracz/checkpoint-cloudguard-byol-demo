@@ -57,9 +57,33 @@ disk type `Fixed (2)`；然后通过 Managed Disk Direct Upload 创建临时 man
 R81 路径禁止 `--plan-*`。R82/R82.10 路径必须传入对应的 Check Point Marketplace
 Plan，不能把有 Plan 镜像伪装为无 Plan。
 
-## 3. 部署参数
+## 3. R81 无 Plan 手动部署步骤
 
-创建 gitignored tfvars：
+以下步骤从空 Resource Group 开始，先人工检查配置、登录和关键数据路径，再运行完整
+自动矩阵。所有命令都在仓库根目录执行。
+
+### 3.1 登录 Azure 并选择 Terraform
+
+```bash
+az cloud set --name AzureCloud
+az login
+az account show --subscription "<SUBSCRIPTION_ID>" --output table
+
+export TERRAFORM="<PATH_TO_TERRAFORM_1_9_OR_NEWER>"
+"$TERRAFORM" version
+```
+
+脚本对每个 Azure CLI 和 Terraform 操作都使用 tfvars 中的订阅 ID，不依赖当前默认
+subscription。
+
+### 3.2 准备 gitignored 配置文件
+
+```bash
+cp configs/demo.tfvars.example configs/r81-e2e.tfvars
+curl -4fsS https://ifconfig.me/ip
+```
+
+编辑 `configs/r81-e2e.tfvars`：
 
 ```hcl
 subscription_id     = "<SUBSCRIPTION_ID>"
@@ -67,7 +91,15 @@ resource_group_name = "rg-checkpoint-r81-e2e"
 prefix              = "cpr81"
 company_domain      = "example.org"
 
+# Gaia Portal/SmartConsole 的主来源；也自动加入 SSH 白名单。
 management_cidr = "<CURRENT_PUBLIC_IPV4>/32"
+
+# 额外 SSH 来源。单个公网 IP 写 /32；办公室、VPN 或跳板出口可写批准的 CIDR。
+ssh_source_cidrs = [
+  "<SECOND_PUBLIC_IPV4>/32",
+  "<APPROVED_OFFICE_CIDR>",
+]
+
 location        = "northeurope"
 remote_location = "westeurope"
 
@@ -81,23 +113,112 @@ collector_vm_size = "Standard_D4ls_v6"
 
 # R81 GA/API 1.7 cannot bootstrap HTTPS Inspection headlessly.
 enable_tls_inspection = false
+
+# 完整验证 T13 时使用当前严格限源 /32；不测试入站 DNAT 时保持 false/空字符串。
+enable_inbound_demo      = true
+inbound_demo_source_cidr = "<CURRENT_PUBLIC_IPV4>/32"
 ```
 
-部署：
+`management_cidr` 始终自动包含在最终 SSH 列表中，不必在 `ssh_source_cidrs` 重复填写。
+Terraform 拒绝任意列表中的 `0.0.0.0/0`，最多接受 50 个额外 CIDR，并为每个不同来源
+创建独立 NSG rule。策略配置也把同一有效列表写入 Check Point
+`CloudGuard-SSH-Sources` group，避免只放行 Azure NSG、却被 Gateway policy 拒绝。
+
+### 3.3 自动生成仓库专用 SSH key
+
+```bash
+unset TF_VAR_admin_ssh_public_key CHECKPOINT_SSH_PRIVATE_KEY
+./scripts/preflight.sh --var-file configs/r81-e2e.tfvars
+
+ls -l .local/checkpoint-demo-ssh .local/checkpoint-demo-ssh.pub
+ssh-keygen -lf .local/checkpoint-demo-ssh.pub
+git check-ignore -v .local/checkpoint-demo-ssh .local/checkpoint-demo-ssh.pub
+```
+
+首次执行 `preflight.sh`、`plan.sh` 或 `deploy.sh` 时自动创建无密码 ED25519 密钥：
+
+- `.local/checkpoint-demo-ssh`：私钥，权限 `0600`
+- `.local/checkpoint-demo-ssh.pub`：公钥
+
+两者均被 `.gitignore` 排除，私钥不进入 Terraform state。部署、策略配置、自动测试和
+下方人工 SSH 命令使用同一私钥。
+
+### 3.4 部署
+
+普通客户订阅的 NSG rule 不会被外部策略删除：
+
+```bash
+unset CHECKPOINT_RECONCILE_SSH_RULE
+./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
+```
+
+仅在已知会自动删除 TCP/22 rule 的测试订阅中启用恢复开关：
+
+```bash
+export CHECKPOINT_RECONCILE_SSH_RULE=true
+./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
+```
+
+该开关只按 Terraform output 中的严格限源 CIDR 临时恢复缺失的 TCP/22 rules，不会
+创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rules。R81 first boot 中 SSH 可能
+先于 Management API 和 Log Exporter 可用，部署脚本等待 `mgmt_cli` 登录和
+`cp_log_export` 均就绪后才配置策略。
+
+### 3.5 查看输出并人工登录
+
+```bash
+TF="${TERRAFORM:-terraform}"
+SUB="$("$TF" -chdir=infra output -raw subscription_id)"
+RG="$("$TF" -chdir=infra output -raw resource_group_name)"
+IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
+NSG_ID="$("$TF" -chdir=infra output -raw checkpoint_nsg_id)"
+NSG="${NSG_ID##*/}"
+KEY="$PWD/.local/checkpoint-demo-ssh"
+
+"$TF" -chdir=infra output
+az network nsg rule list \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --nsg-name "$NSG" \
+  --query "[?destinationPortRange=='22'].{name:name,priority:priority,source:sourceAddressPrefix}" \
+  --output table
+
+ssh-keygen -R "$IP" -f .local/known_hosts 2>/dev/null || true
+ssh \
+  -i "$KEY" \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=.local/known_hosts \
+  "admin@$IP"
+```
+
+Gaia shell 内逐条检查：
+
+```bash
+clish -c "show version all"
+clish -c "show interfaces"
+fw stat
+mgmt_cli -r true show packages limit 10 --format json
+cp_log_export status
+exit
+```
+
+预期 guest 为 R81、Access Policy 已安装、`azure-monitor` Log Exporter 为 `Running`。
+Azure VM metadata 中的 `notused` 不是登录用户，必须使用 `admin`。
+
+如果仅测试订阅的组织策略已删除 SSH rule，可在同一 shell 临时恢复、登录并清理：
 
 ```bash
 export TERRAFORM="<PATH_TO_TERRAFORM_1_9_OR_NEWER>"
-export TF_VAR_admin_ssh_public_key="$(tr -d '\r\n' < ~/.ssh/id_ed25519.pub)"
+# shellcheck disable=SC1091
+source scripts/lib.sh
+CIDRS="$("$TERRAFORM" -chdir=infra output -json ssh_source_cidrs | jq -c .)"
+ensure_restricted_ssh_nsg_rules "$SUB" "$RG" "$NSG_ID" "$CIDRS"
+trap remove_temporary_restricted_ssh_nsg_rule EXIT
 
-# Only use this opt-in if an organization policy removes the /32 SSH rule.
-export CHECKPOINT_RECONCILE_SSH_RULE=true
-
-./scripts/deploy.sh --var-file "<R81_TFVARS>"
+ssh -i "$KEY" -o UserKnownHostsFile=.local/known_hosts "admin@$IP"
+remove_temporary_restricted_ssh_nsg_rule
+trap - EXIT
 ```
-
-R81 first boot 中 SSH 可能先于 Management API 和 Log Exporter 可用。脚本等待
-`mgmt_cli` 登录和 `cp_log_export` 均就绪后才配置策略。临时恢复的 SSH rule 只允许
-`management_cidr` 到 TCP/22，并在命令结束时删除，避免 Terraform state 冲突。
 
 ## 4. R81 兼容性处理
 
@@ -112,6 +233,162 @@ R81 first boot 中 SSH 可能先于 Management API 和 Log Exporter 可用。脚
 | API 1.7 无 Outbound CA/Gateway HTTPS 写接口 | 默认关闭 TLS，或使用第 7 节 SmartConsole 混合模式 |
 
 ## 5. 完整测试结果
+
+### 5.1 先手动逐项验证
+
+重新载入输出，避免复制错误资源名：
+
+```bash
+TF="${TERRAFORM:-terraform}"
+SUB="$("$TF" -chdir=infra output -raw subscription_id)"
+RG="$("$TF" -chdir=infra output -raw resource_group_name)"
+EU_VM="$("$TF" -chdir=infra output -raw eu_workload_vm_name)"
+REMOTE_VM="$("$TF" -chdir=infra output -raw remote_workload_vm_name)"
+EU_NIC="$("$TF" -chdir=infra output -raw eu_workload_nic_name)"
+REMOTE_NIC="$("$TF" -chdir=infra output -raw remote_workload_nic_name)"
+EU_IP="$("$TF" -chdir=infra output -raw eu_workload_private_ip)"
+REMOTE_IP="$("$TF" -chdir=infra output -raw remote_workload_private_ip)"
+NEXT_HOP="$("$TF" -chdir=infra output -raw checkpoint_backend_private_ip)"
+PUBLIC_IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
+GATEWAY_VM="$("$TF" -chdir=infra output -raw checkpoint_vm_name)"
+PACKAGE="$("$TF" -chdir=infra output -raw policy_package_name)"
+WORKSPACE="$("$TF" -chdir=infra output -raw log_analytics_workspace_customer_id)"
+ACCOUNT="$("$TF" -chdir=infra output -raw audit_storage_account_name)"
+CONTAINER="$("$TF" -chdir=infra output -raw audit_container_name)"
+```
+
+T01/T02，分别确认 Active 默认路由下一跳为 `VirtualAppliance $NEXT_HOP`：
+
+```bash
+az network nic show-effective-route-table \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_NIC" \
+  --query "value[?contains(addressPrefix, '0.0.0.0/0')].{prefix:addressPrefix,nextHop:nextHopType,nextHopIp:nextHopIpAddress,state:state}" \
+  --output table
+
+az network nic show-effective-route-table \
+  --subscription "$SUB" --resource-group "$RG" --name "$REMOTE_NIC" \
+  --query "value[?contains(addressPrefix, '0.0.0.0/0')].{prefix:addressPrefix,nextHop:nextHopType,nextHopIp:nextHopIpAddress,state:state}" \
+  --output table
+```
+
+T03-T07，逐个在主 workload 执行流量命令，而不是一次性跑整个矩阵：
+
+```bash
+# T03：跨区域 TCP/8080，应输出 __DEMO_RESULT=T03:PASS。
+az vm run-command invoke \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_VM" \
+  --command-id RunShellScript --scripts @scripts/vm-case.sh \
+  --parameters "arg1=T03" "arg2=$REMOTE_IP" "arg3=false" "arg4=unused" \
+  --query "value[].message" --output tsv
+
+# T04：允许 HTTPS。
+az vm run-command invoke \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_VM" \
+  --command-id RunShellScript --scripts @scripts/vm-case.sh \
+  --parameters "arg1=T04" "arg2=-" "arg3=false" "arg4=unused" \
+  --query "value[].message" --output tsv
+
+# T05：阻断 example.com。
+az vm run-command invoke \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_VM" \
+  --command-id RunShellScript --scripts @scripts/vm-case.sh \
+  --parameters "arg1=T05" "arg2=-" "arg3=false" "arg4=unused" \
+  --query "value[].message" --output tsv
+
+# T06：R81 在 HTTP 上验证 allowed/blocked path。
+az vm run-command invoke \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_VM" \
+  --command-id RunShellScript --scripts @scripts/vm-case.sh \
+  --parameters "arg1=T06" "arg2=-" "arg3=false" "arg4=unused" \
+  --query "value[].message" --output tsv
+
+# T07：当前 R81 配置关闭 TLS Inspection，应明确输出 SKIP，不得记作 PASS。
+az vm run-command invoke \
+  --subscription "$SUB" --resource-group "$RG" --name "$EU_VM" \
+  --command-id RunShellScript --scripts @scripts/vm-case.sh \
+  --parameters "arg1=T07" "arg2=-" "arg3=false" "arg4=unused" \
+  --query "value[].message" --output tsv
+```
+
+T08/T09/T15，通过仓库私钥检查 rulebase、Log Exporter 和 guest release：
+
+```bash
+ssh \
+  -i .local/checkpoint-demo-ssh \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=.local/known_hosts \
+  "admin@$PUBLIC_IP" \
+  bash -s -- "$PACKAGE" R81 \
+  <scripts/inspect-checkpoint.sh
+```
+
+输出中应同时出现 `CloudGuard Demo - Block Geo Outbound`、`CloudGuard Demo - Block Geo
+Inbound`、`azure-monitor` 和 `Product version Check Point Gaia R81`。
+
+T10-T12，检查日志摄取、WORM policy 和 EU 资源位置：
+
+```bash
+az monitor log-analytics query \
+  --subscription "$SUB" \
+  --workspace "$WORKSPACE" \
+  --analytics-query "Syslog | where TimeGenerated > ago(2h) | where SyslogMessage has_any ('Check Point', 'action', 'product') | take 20" \
+  --output table
+
+az storage container immutability-policy show \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --account-name "$ACCOUNT" \
+  --container-name "$CONTAINER" \
+  --output json
+
+az resource list \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --query "[].{name:name,type:type,location:location}" \
+  --output table
+```
+
+T13 启用严格限源 DNAT 时，从 tfvars 批准的来源执行：
+
+```bash
+curl -fsS --connect-timeout 10 --max-time 30 "http://${PUBLIC_IP}:18080/"
+```
+
+应返回主 workload 页面。T14 确认精确 Gallery image 且 `plan=null`：
+
+```bash
+az vm show \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --name "$GATEWAY_VM" \
+  --query "{imageId:storageProfile.imageReference.id,plan:plan}" \
+  --output json
+```
+
+T16 在 T03 后确认远端 workload 看到原始 `$EU_IP`，而非 Gateway Hide NAT 地址：
+
+```bash
+az vm run-command invoke \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --name "$REMOTE_VM" \
+  --command-id RunShellScript \
+  --scripts "journalctl -u demo-web.service --since '10 minutes ago' --no-pager | grep -F '$EU_IP'" \
+  --query "value[].message" \
+  --output tsv
+```
+
+### 5.2 再运行完整自动矩阵
+
+```bash
+export CHECKPOINT_RECONCILE_SSH_RULE=true # 只用于会删除 SSH rule 的测试订阅
+./scripts/run-tests.sh
+jq . evidence/*/summary.json | tail -80
+```
+
+任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；只有未启用功能可记录 `SKIP`。
+
+### 5.3 历史验证结果
 
 最终自动矩阵证据目录：
 
@@ -263,24 +540,24 @@ Pre-Upgrade Verifier、磁盘空间检查、关闭 SmartConsole sessions，并�
 
 ## 8. 清理与保留
 
-验证结束后的状态：
-
-- 4 台 Demo VM deallocated。
-- upload Managed Disk 和临时 managed image 已删除。
-- Gallery definition/version 及 Southeast Asia、North Europe 副本保留。
-- WORM policy 为 `Unlocked`，未执行不可逆 lock。
-
-重新 deallocate：
+测试结束后销毁本次 Terraform 部署的全部 Demo 资源：
 
 ```bash
-for VM in cpr81-gateway cpr81-eu-workload cpr81-remote-workload cpr81-log-collector; do
-  az vm deallocate \
-    --subscription "<SUBSCRIPTION_ID>" \
-    --resource-group rg-checkpoint-r81-e2e \
-    --name "$VM" \
-    --no-wait
-done
+TF="${TERRAFORM:-terraform}"
+RG="$("$TF" -chdir=infra output -raw resource_group_name)"
+SUB="$("$TF" -chdir=infra output -raw subscription_id)"
+
+CONFIRM_DESTROY="$RG" \
+  ./scripts/destroy.sh --var-file configs/r81-e2e.tfvars
+
+# 必须输出 false；state list 必须为空。
+az group exists --subscription "$SUB" --name "$RG"
+"$TF" -chdir=infra state list
 ```
+
+不要执行 `lock-worm.sh --yes`；WORM policy 保持 `Unlocked` 才能正常销毁。上述命令删除
+本次 Demo Resource Group 内的 Gateway、workload、日志、网络和存储资源，但不会删除
+预先存在、作为镜像源使用的 `custom-images` Gallery definition/version。
 
 ## 9. 官方参考
 

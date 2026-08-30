@@ -31,22 +31,27 @@ locals {
     all = local.base_tags
   }
 
-  checkpoint_security_rules = concat([
-    {
-      name                       = "AllowRestrictedSSH"
-      priority                   = "100"
+  effective_ssh_source_cidrs = distinct(concat([var.management_cidr], var.ssh_source_cidrs))
+
+  checkpoint_ssh_security_rules = [
+    for index, cidr in local.effective_ssh_source_cidrs : {
+      name                       = index == 0 ? "AllowRestrictedSSH" : format("AllowRestrictedSSH%02d", index + 1)
+      priority                   = tostring(100 + index)
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
       source_port_ranges         = "*"
       destination_port_ranges    = "22"
-      description                = "Restricted SSH access"
-      source_address_prefix      = var.management_cidr
+      description                = "Restricted SSH access from ${cidr}"
+      source_address_prefix      = cidr
       destination_address_prefix = "*"
-    },
+    }
+  ]
+
+  checkpoint_security_rules = concat(local.checkpoint_ssh_security_rules, [
     {
       name                       = "AllowRestrictedGaiaPortal"
-      priority                   = "110"
+      priority                   = "200"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
@@ -58,7 +63,7 @@ locals {
     },
     {
       name                       = "AllowRestrictedSmartConsole18190"
-      priority                   = "120"
+      priority                   = "210"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
@@ -70,7 +75,7 @@ locals {
     },
     {
       name                       = "AllowRestrictedSmartConsole19009"
-      priority                   = "130"
+      priority                   = "220"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
@@ -82,7 +87,7 @@ locals {
     },
     {
       name                       = "AllowEUProtectedNetwork"
-      priority                   = "200"
+      priority                   = "300"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "*"
@@ -94,7 +99,7 @@ locals {
     },
     {
       name                       = "AllowRemoteProtectedNetwork"
-      priority                   = "210"
+      priority                   = "310"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "*"
@@ -107,7 +112,7 @@ locals {
     ], var.enable_inbound_demo ? [
     {
       name                       = "AllowRestrictedInboundDemo"
-      priority                   = "220"
+      priority                   = "320"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"

@@ -108,7 +108,11 @@ resource_group_name = "rg-checkpoint-r82-e2e"
 prefix              = "cpr82"
 company_domain      = "example.org"
 
-management_cidr = "<CURRENT_PUBLIC_IPV4>/32"
+management_cidr = "<PRIMARY_PUBLIC_IPV4>/32"
+ssh_source_cidrs = [
+  "<ADDITIONAL_PUBLIC_IPV4>/32",
+  "<APPROVED_OFFICE_CIDR>",
+]
 location        = "northeurope"
 remote_location = "westeurope"
 
@@ -127,14 +131,22 @@ enable_tls_inspection = true
 
 ```bash
 export TERRAFORM="<PATH_TO_TERRAFORM_1_9_OR_NEWER>"
-export TF_VAR_admin_ssh_public_key="$(tr -d '\r\n' < ~/.ssh/id_ed25519.pub)"
+unset TF_VAR_admin_ssh_public_key CHECKPOINT_SSH_PRIVATE_KEY
 
-# Only use this opt-in if an organization policy removes the /32 SSH rule.
+# preflight/deploy automatically creates .local/checkpoint-demo-ssh{,.pub}.
+./scripts/preflight.sh --var-file "<R82_TFVARS>"
+ssh-keygen -lf .local/checkpoint-demo-ssh.pub
+
+# Only use this in a test subscription whose policy removes SSH rules.
 export CHECKPOINT_RECONCILE_SSH_RULE=true
 
-./scripts/preflight.sh --var-file "<R82_TFVARS>"
 ./scripts/deploy.sh --var-file "<R82_TFVARS>"
 ```
+
+`management_cidr` 始终自动加入 SSH 白名单；`ssh_source_cidrs` 只填写额外来源。单个
+公网 IP 必须使用 `/32`，办公室或 VPN 出口可写批准的 CIDR。Terraform 为每个来源创建
+独立 TCP/22 NSG rule，策略脚本把同一列表写入 `CloudGuard-SSH-Sources`。普通客户环境
+不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
 
 部署脚本接受 `checkpoint:check-point-cg-r82:mgmt-byol` terms，并把相同 Plan 写入 VM。
 Preflight 同时检查 definition Plan、Linux/Generalized/x64/Gen1、目标 region 副本和

@@ -6,8 +6,13 @@ company_domain      = "example.org"
 location        = "westeurope"
 remote_location = "northeurope"
 
-# Replace with the public /32 used by the administrator running SmartConsole.
+# Primary public /32 used by the administrator running SmartConsole.
 management_cidr = "203.0.113.10/32"
+# Optional additional SSH sources. management_cidr is included automatically.
+ssh_source_cidrs = [
+  # "198.51.100.20/32",
+  # "192.0.2.0/24",
+]
 
 checkpoint_os_version = "R82"
 # Optional: use a generalized managed image or Compute Gallery image instead

@@ -97,8 +97,25 @@ variable "management_cidr" {
   }
 }
 
+variable "ssh_source_cidrs" {
+  description = "Additional public administrator CIDRs allowed to reach SSH. management_cidr is always included automatically."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = (
+      length(var.ssh_source_cidrs) <= 50 &&
+      alltrue([
+        for cidr in var.ssh_source_cidrs :
+        can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0"
+      ])
+    )
+    error_message = "ssh_source_cidrs may contain at most 50 valid, restricted IPv4 CIDRs and cannot contain 0.0.0.0/0."
+  }
+}
+
 variable "admin_ssh_public_key" {
-  description = "SSH public key used for the Check Point and Linux demo VMs."
+  description = "SSH public key used for the Check Point and Linux demo VMs. Deployment scripts generate a repository-local key when omitted."
   type        = string
   sensitive   = true
 

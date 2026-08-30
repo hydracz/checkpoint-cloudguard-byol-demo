@@ -41,6 +41,7 @@ ACCOUNT="$(output_value audit_storage_account_name)"
 CONTAINER="$(output_value audit_container_name)"
 RETENTION="$(output_value immutable_retention_days)"
 MANAGEMENT_CIDR="$(output_value management_cidr)"
+SSH_SOURCE_CIDRS_JSON="$(printf '%s' "$outputs" | jq -e -c '.ssh_source_cidrs.value')"
 IMAGE_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_image_id.value // ""')"
 IMAGE_REQUIRES_PLAN="$(output_value checkpoint_image_requires_plan)"
 IMAGE_OFFER="$(output_value checkpoint_offer)"
@@ -192,9 +193,9 @@ run_vm_case T07 "$EU_VM" ""
 
 policy_evidence="$OUT/T08-T09-policy-and-exporter.json"
 gateway_inspected=false
-ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$HOME/.ssh/id_ed25519}"
+ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$DEFAULT_SSH_PRIVATE_KEY}"
 if [[ "$RECONCILE_SSH_RULE" == "true" ]]; then
-  ensure_restricted_ssh_nsg_rule "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDR"
+  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$SSH_SOURCE_CIDRS_JSON"
   trap remove_temporary_restricted_ssh_nsg_rule EXIT
 fi
 if [[ -f "$ssh_key" ]] &&

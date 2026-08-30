@@ -147,8 +147,13 @@ company_domain      = "example.org"
 location        = "westeurope"
 remote_location = "northeurope"
 
-# 当前运维出口公网 IP；禁止 0.0.0.0/0。
+# Gaia Portal/SmartConsole 的主运维出口；也自动允许 SSH。
 management_cidr = "203.0.113.10/32"
+# 可选的额外 SSH 出口；每个公网 IP 写成 /32，也可填写办公室 CIDR。
+ssh_source_cidrs = [
+  "198.51.100.20/32",
+  "192.0.2.0/24",
+]
 
 checkpoint_vm_size = "Standard_D8s_v5"
 workload_vm_size   = "Standard_D4ls_v6"
@@ -161,6 +166,7 @@ collector_vm_size  = "Standard_D4ls_v6"
 | --- | --- | --- | --- | --- |
 | `subscription_id` | 是 | string | 无 | Azure CLI 和 Terraform 明确操作的客户订阅 |
 | `management_cidr` | 是 | string | 无 | 允许运维入口的公网 CIDR，不能是 `0.0.0.0/0` |
+| `ssh_source_cidrs` | 否 | list(string) | `[]` | 额外允许 SSH 的公网 `/32` 或 CIDR；`management_cidr` 始终自动包含 |
 | `company_domain` | 否 | string | `example.org` | 演示 HTTPS Inspection CA 的 `issued-by`；可填写客户批准的公司域名 |
 | `location` | 否 | string | `westeurope` | Hub、Check Point、主工作负载和日志资源所在区域 |
 | `remote_location` | 否 | string | `northeurope` | 远端工作负载所在区域，必须与 `location` 不同 |
@@ -233,11 +239,19 @@ R82 额外传入三项 `--plan-*` 参数。
 ### 3. 准备 SSH key
 
 ```bash
-test -f ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
-export TF_VAR_admin_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+unset TF_VAR_admin_ssh_public_key CHECKPOINT_SSH_PRIVATE_KEY
+./scripts/preflight.sh --var-file configs/demo.tfvars
+ssh-keygen -lf .local/checkpoint-demo-ssh.pub
 ```
 
-脚本在未设置变量时也会自动读取 `~/.ssh/id_ed25519.pub`。
+`preflight.sh`、`plan.sh` 或 `deploy.sh` 第一次运行时会自动生成：
+
+- 私钥：`.local/checkpoint-demo-ssh`，权限 `0600`
+- 公钥：`.local/checkpoint-demo-ssh.pub`
+
+`.local/` 和这两个具体路径均在 `.gitignore` 中；私钥不会写入 Terraform state，也不能
+提交。自动化默认使用该密钥。只有需要外部密钥时才同时设置
+`TF_VAR_admin_ssh_public_key` 和匹配的 `CHECKPOINT_SSH_PRIVATE_KEY`。
 
 Check Point Azure VM 的操作系统 SSH 用户是 `admin`。Azure VM metadata 中可能
 显示兼容占位用户名 `notused`，不要用它登录 Gaia。
@@ -289,18 +303,18 @@ Terraform plan。Check Point Management API 可用后，脚本写入策略和 Lo
 
 日志导出分为两个 Terraform 阶段。脚本先向日志收集 VM 写入一条 bootstrap
 syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Export。
-这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 只写入权限为
-`0600` 的 `.local/deployment-secrets.env`。
+这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 只写入权限为 `0600` 的 `.local/deployment-secrets.env`；部署 SSH 私钥只
+写入 `.local/checkpoint-demo-ssh`。
 
 策略配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过受限 Gaia SSH 等待
 Management API 和 Log Exporter 命令最多 30 分钟，避免首次启动尚在安装组件时过早
 执行策略或回退到不稳定的 Run Command；超时后才回退。
 可用 `CHECKPOINT_SSH_WAIT_SECONDS` 调整等待时间，也可显式设置
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
-若订阅自动删除 Terraform 创建的 `/32` SSH NSG rule，可在确认符合客户 Azure
-Policy 后显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只恢复相同
-`management_cidr` 的临时 rule，不会创建开放来源，并在操作结束时删除，避免留下
-Terraform state 冲突。该开关同时用于策略配置和 T08/T09/T15 现场检查。
+若测试订阅自动删除 Terraform 创建的 SSH NSG rules，可在确认符合 Azure Policy 后
+显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只按 Terraform output 中的
+`ssh_source_cidrs` 恢复 TCP/22 临时 rules，不会创建开放来源，并在操作结束时删除它
+临时创建的 rules。普通客户环境已有稳定的入站白名单，不应设置该开关。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
 
@@ -335,7 +349,8 @@ terraform -chdir=infra output
 
 - `subscription_id` 是客户目标订阅。
 - `checkpoint_backend_private_ip` 是两个工作负载的 NVA 下一跳。
-- `checkpoint_management_url` 仅能从 `management_cidr` 访问。
+- `checkpoint_management_url` 仅能从 `management_cidr` 访问；SSH 还允许
+  `ssh_source_cidrs` 中的额外来源。
 - Log Analytics 和 Storage 位于主 EU region。
 
 ### 2. 检查数据路径
@@ -400,7 +415,7 @@ CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \
 | `D8s_v6` 无法部署 Check Point | Dv6 仅支持 Gen2，当前 `standalone` `mgmt-byol` 镜像为 Gen1；使用 `D8s_v5`、`F16s` 或经 Check Point 支持矩阵确认的其他 Gen1 规格。 |
 | SSH 用户 `notused` 失败 | Gaia 登录用户是 `admin`；`notused` 只是 Azure metadata 兼容占位。 |
 | 重建 VM 后 SSH host key changed | 删除项目专用缓存：`ssh-keygen -R <GATEWAY_PUBLIC_IP> -f .local/known_hosts`，核对 Azure Public IP 后重试。 |
-| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先 SSH；确保 `management_cidr` 是当前执行器 `/32`。 |
+| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先使用 `.local/checkpoint-demo-ssh`；确保当前出口 `/32` 位于 `management_cidr` 或 `ssh_source_cidrs`。 |
 | Policy install 报只有一块 interface | Gateway object 必须同时定义 `eth0` External 和 `eth1` Internal。 |
 | Updatable Objects repository 未初始化 | 当前脚本会自动执行初始化；首次需要 Check Point 能访问更新服务。 |
 | Storage data-plane 403/404 | 审计 Storage/container/WORM 已改为 ARM management-plane template，不要求公网 data-plane。 |

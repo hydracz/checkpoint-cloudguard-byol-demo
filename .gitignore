@@ -1,4 +1,7 @@
+# Deployment secrets and the repository-local SSH key must never be committed.
 .local/
+/.local/checkpoint-demo-ssh
+/.local/checkpoint-demo-ssh.pub
 evidence/
 .terraform/
 infra/.terraform/

@@ -43,6 +43,14 @@ run "default_demo_plan" {
   }
 
   assert {
+    condition = (
+      length(local.effective_ssh_source_cidrs) == 1 &&
+      local.effective_ssh_source_cidrs[0] == "203.0.113.10/32"
+    )
+    error_message = "management_cidr must always be included in the effective SSH source list."
+  }
+
+  assert {
     condition = alltrue([
       for rule in local.checkpoint_security_rules :
       can(rule.source_address_prefix) &&
@@ -74,6 +82,37 @@ run "default_demo_plan" {
       azurerm_virtual_network_peering.remote_to_hub.remote_virtual_network_id == module.checkpoint.vnet_id,
     ])
     error_message = "Spoke-to-hub peerings must depend on the module-created hub VNet ID."
+  }
+}
+
+run "multiple_ssh_source_cidrs" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidr                = "203.0.113.10/32"
+    ssh_source_cidrs               = ["203.0.113.10/32", "198.51.100.0/24"]
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+  }
+
+  assert {
+    condition = (
+      length(local.effective_ssh_source_cidrs) == 2 &&
+      local.effective_ssh_source_cidrs[0] == "203.0.113.10/32" &&
+      local.effective_ssh_source_cidrs[1] == "198.51.100.0/24" &&
+      length(local.checkpoint_ssh_security_rules) == 2 &&
+      local.checkpoint_ssh_security_rules[1].name == "AllowRestrictedSSH02" &&
+      local.checkpoint_ssh_security_rules[1].source_address_prefix == "198.51.100.0/24"
+    )
+    error_message = "Each distinct SSH source CIDR must receive a deterministic, restricted NSG rule."
   }
 }
 

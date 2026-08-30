@@ -105,15 +105,15 @@ UDR、Gaia 静态路由和 Anti-Spoofing 配置。
 
 | 优先级 | 来源 | 协议/端口 | 目的 |
 | --- | --- | --- | --- |
-| 100 | `management_cidr` | TCP/22 | SSH |
-| 110 | `management_cidr` | TCP/443 | Gaia Portal |
-| 120 | `management_cidr` | TCP/18190 | SmartConsole |
-| 130 | `management_cidr` | TCP/19009 | SmartConsole |
-| 200 | `10.61.0.0/16` | `Any` | 主 Spoke 转发流量 |
-| 210 | `10.62.0.0/16` | `Any` | 远端 Spoke 转发流量 |
-| 220（条件化） | `inbound_demo_source_cidr` | TCP/18080 | 可选 DNAT 演示 |
+| 100-149 | `management_cidr` + `ssh_source_cidrs`（每个 CIDR 一条） | TCP/22 | SSH |
+| 200 | `management_cidr` | TCP/443 | Gaia Portal |
+| 210 | `management_cidr` | TCP/18190 | SmartConsole |
+| 220 | `management_cidr` | TCP/19009 | SmartConsole |
+| 300 | `10.61.0.0/16` | `Any` | 主 Spoke 转发流量 |
+| 310 | `10.62.0.0/16` | `Any` | 远端 Spoke 转发流量 |
+| 320（条件化） | `inbound_demo_source_cidr` | TCP/18080 | 可选 DNAT 演示 |
 
-管理 CIDR 和可选 DNAT 来源均拒绝 `0.0.0.0/0`。
+管理 CIDR、SSH CIDR 列表和可选 DNAT 来源均拒绝 `0.0.0.0/0`。
 
 ### Workload NSG
 

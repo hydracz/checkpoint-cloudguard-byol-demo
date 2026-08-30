@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 19 ]]; then
-  echo "Expected 19 arguments; received $#." >&2
+if [[ $# -ne 20 ]]; then
+  echo "Expected 20 arguments; received $#." >&2
   exit 2
 fi
 
@@ -22,15 +22,18 @@ INBOUND_ENABLED="${13}"
 INBOUND_SOURCE_CIDR="${14}"
 PUBLIC_IP="${15}"
 MANAGEMENT_CIDR="${16}"
-COMPANY_DOMAIN="${17}"
-CHECKPOINT_RELEASE="${18}"
-R81_TLS_MANUAL="${19}"
+SSH_SOURCE_CIDRS_B64="${17}"
+COMPANY_DOMAIN="${18}"
+CHECKPOINT_RELEASE="${19}"
+R81_TLS_MANUAL="${20}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
 EU_NETWORK="CloudGuard-EU-Spoke"
 REMOTE_NETWORK="CloudGuard-Remote-Spoke"
 MANAGEMENT_NETWORK="CloudGuard-Management-Source"
+MANAGEMENT_SOURCES_GROUP="CloudGuard-SSH-Sources"
+MANAGEMENT_SSH_NETWORK_PREFIX="CloudGuard-SSH-Source"
 PROTECTED_GROUP="CloudGuard-Protected-Networks"
 EU_WEB_HOST="CloudGuard-EU-Web"
 BLOCKED_URLS_OBJECT="CloudGuard-Demo-Blocked-URLs"
@@ -85,6 +88,7 @@ wait_for_command cp_log_export
 COUNTRIES_JSON="$(decode_json "$COUNTRIES_B64")"
 APPLICATIONS_JSON="$(decode_json "$APPLICATIONS_B64")"
 URLS_JSON="$(decode_json "$URLS_B64")"
+SSH_SOURCE_CIDRS_JSON="$(decode_json "$SSH_SOURCE_CIDRS_B64")"
 
 log "Waiting for the standalone Management API..."
 ready=false
@@ -251,6 +255,40 @@ ensure_network "$REMOTE_NETWORK" "${REMOTE_CIDR%/*}" "${REMOTE_CIDR#*/}"
 ensure_network "$MANAGEMENT_NETWORK" "${MANAGEMENT_CIDR%/*}" "${MANAGEMENT_CIDR#*/}"
 ensure_host "$EU_WEB_HOST" "$EU_HOST_IP"
 WEB_SERVICE="HTTP_proxy"
+
+if api show group name "$MANAGEMENT_SOURCES_GROUP" >/dev/null 2>&1; then
+  api delete group name "$MANAGEMENT_SOURCES_GROUP" >/dev/null
+fi
+if api show network name "${MANAGEMENT_SSH_NETWORK_PREFIX}-01" >/dev/null 2>&1; then
+  api delete network name "${MANAGEMENT_SSH_NETWORK_PREFIX}-01" >/dev/null
+fi
+
+MANAGEMENT_SSH_OBJECTS=("$MANAGEMENT_NETWORK")
+management_ssh_index=0
+while IFS= read -r cidr; do
+  management_ssh_index=$((management_ssh_index + 1))
+  if ((management_ssh_index == 1)); then
+    [[ "$cidr" == "$MANAGEMENT_CIDR" ]] || {
+      echo "The first SSH source CIDR must match management_cidr." >&2
+      exit 1
+    }
+    continue
+  fi
+  printf -v object_name '%s-%02d' "$MANAGEMENT_SSH_NETWORK_PREFIX" "$management_ssh_index"
+  ensure_network "$object_name" "${cidr%/*}" "${cidr#*/}"
+  MANAGEMENT_SSH_OBJECTS+=("$object_name")
+done < <(printf '%s' "$SSH_SOURCE_CIDRS_JSON" | jq -e -r '.[]')
+((management_ssh_index > 0)) || {
+  echo "At least one SSH source CIDR is required." >&2
+  exit 1
+}
+management_group_command=(add group name "$MANAGEMENT_SOURCES_GROUP")
+management_ssh_index=1
+for object_name in "${MANAGEMENT_SSH_OBJECTS[@]}"; do
+  management_group_command+=("members.$management_ssh_index" "$object_name")
+  management_ssh_index=$((management_ssh_index + 1))
+done
+api "${management_group_command[@]}" >/dev/null
 
 if api show group name "$PROTECTED_GROUP" >/dev/null 2>&1; then
   api set group \
@@ -465,7 +503,7 @@ fi
 add_access_rule \
   layer "$ACCESS_LAYER" position 1 \
   name "${RULE_PREFIX}Allow Restricted Management SSH" \
-  source.1 "$MANAGEMENT_NETWORK" destination.1 "$MANAGED_GATEWAY_NAME" \
+  source.1 "$MANAGEMENT_SOURCES_GROUP" destination.1 "$MANAGED_GATEWAY_NAME" \
   service.1 ssh \
   action Accept track.type Log install-on.1 "$MANAGED_GATEWAY_NAME"
 

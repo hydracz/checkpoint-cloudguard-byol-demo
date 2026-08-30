@@ -136,7 +136,12 @@ output "policy_package_name" {
 
 output "management_cidr" {
   value       = var.management_cidr
-  description = "Source CIDR admitted by both Azure NSG and Check Point management policy."
+  description = "Primary source CIDR admitted to SSH and the Gaia/SmartConsole management ports."
+}
+
+output "ssh_source_cidrs" {
+  value       = local.effective_ssh_source_cidrs
+  description = "Effective source CIDRs admitted to SSH by both Azure NSG and the Check Point access policy."
 }
 
 output "company_domain" {
@@ -188,9 +193,19 @@ output "audit_storage_account_name" {
   description = "EU storage account receiving continuous Syslog exports."
 }
 
+output "audit_storage_account_id" {
+  value       = local.audit_storage_id
+  description = "Resource ID of the storage account receiving continuous Syslog exports."
+}
+
 output "audit_container_name" {
   value       = "am-syslog"
   description = "Container protected by the WORM retention policy."
+}
+
+output "log_analytics_data_export_name" {
+  value       = "${var.prefix}-syslog-to-worm"
+  description = "Name of the Log Analytics continuous Syslog export."
 }
 
 output "immutable_retention_days" {
