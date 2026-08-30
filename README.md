@@ -83,6 +83,8 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
 [技术要求映射](docs/requirement-mapping.md)、[网络与 IP 规划](docs/network-ip-plan.md)、
 [CloudGuard 镜像导出与创建](docs/cloudguard-image-export.md)、
 [可选：从本地 tar.gz 发布 Azure Compute Gallery 镜像](docs/upload-vhd-to-compute-gallery.md)、
+[R81 无 Plan 镜像端到端测试与操作](docs/r81-image-e2e-test-and-operations.md)、
+[R82 有 Plan 镜像端到端测试与操作](docs/r82-image-e2e-test-and-operations.md)、
 [现场验证记录](docs/validated-results.md) 和 [draw.io 架构图说明](docs/drawio-architecture.md)。
 
 ## 前置条件
