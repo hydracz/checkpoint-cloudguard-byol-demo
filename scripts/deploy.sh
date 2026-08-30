@@ -33,8 +33,7 @@ load_deployment_environment "$VAR_FILE"
 require_cmd az
 
 audit_auto_vars="$INFRA/audit.auto.tfvars.json"
-if "$TERRAFORM" -chdir="$INFRA" state list 2>/dev/null |
-  grep -q 'azurerm_log_analytics_data_export_rule.syslog'; then
+if terraform_state_has 'azurerm_log_analytics_data_export_rule.syslog[0]'; then
   printf '{"enable_log_data_export":true}\n' >"$audit_auto_vars"
 else
   rm -f "$audit_auto_vars"

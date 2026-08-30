@@ -75,8 +75,7 @@ apply_export_configuration() {
     "$LOCAL_DIR/plan.tfplan"
 }
 
-if ! "$TERRAFORM" -chdir="$INFRA" state list 2>/dev/null |
-  grep -q 'azurerm_log_analytics_data_export_rule.syslog'; then
+if ! terraform_state_has 'azurerm_log_analytics_data_export_rule.syslog[0]'; then
   existing_export="$(
     az resource show \
       --subscription "$SUBSCRIPTION" \

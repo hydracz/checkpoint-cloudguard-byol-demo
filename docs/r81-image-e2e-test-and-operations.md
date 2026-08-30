@@ -1,6 +1,6 @@
 # R81 无 Plan 镜像端到端测试与操作参考
 
-验证时间：2026-08-29 UTC / 2026-08-30 UTC+8
+验证时间：2026-08-29 至 2026-08-30 UTC
 
 本文是私有镜像目录中 R81 操作记录的可提交副本，记录已实际执行的 Azure Global
 发布、完整 Demo 部署、R81/R82 兼容性处理、T01-T16 测试、清理，以及 R81 HTTPS
@@ -91,11 +91,9 @@ resource_group_name = "rg-checkpoint-r81-e2e"
 prefix              = "cpr81"
 company_domain      = "example.org"
 
-# Gaia Portal/SmartConsole 的主来源；也自动加入 SSH 白名单。
-management_cidr = "<CURRENT_PUBLIC_IPV4>/32"
-
-# 额外 SSH 来源。单个公网 IP 写 /32；办公室、VPN 或跳板出口可写批准的 CIDR。
-ssh_source_cidrs = [
+# 所有管理员来源统一写在一个列表；当前部署出口必须放在首项。
+management_cidrs = [
+  "<CURRENT_PUBLIC_IPV4>/32",
   "<SECOND_PUBLIC_IPV4>/32",
   "<APPROVED_OFFICE_CIDR>",
 ]
@@ -119,10 +117,11 @@ enable_inbound_demo      = true
 inbound_demo_source_cidr = "<CURRENT_PUBLIC_IPV4>/32"
 ```
 
-`management_cidr` 始终自动包含在最终 SSH 列表中，不必在 `ssh_source_cidrs` 重复填写。
-Terraform 拒绝任意列表中的 `0.0.0.0/0`，最多接受 50 个额外 CIDR，并为每个不同来源
-创建独立 NSG rule。策略配置也把同一有效列表写入 Check Point
-`CloudGuard-SSH-Sources` group，避免只放行 Azure NSG、却被 Gateway policy 拒绝。
+`management_cidrs` 是唯一管理员来源清单。Terraform 拒绝 `0.0.0.0/0`，接受 1-50 个
+CIDR，并为每个不同来源创建 SSH、Gaia Portal 和 SmartConsole NSG rules。上游模块
+首次启动只能接收一个 network，因此首项用于 bootstrap；策略配置随后用
+`cp_conf client createlist` 同步完整 GUI Clients，并把同一列表写入
+`CloudGuard-SSH-Sources`，避免 Azure 与 Gateway 管理来源不一致。
 
 ### 3.3 自动生成仓库专用 SSH key
 
@@ -211,9 +210,9 @@ Azure VM metadata 中的 `notused` 不是登录用户，必须使用 `admin`。
 export TERRAFORM="<PATH_TO_TERRAFORM_1_9_OR_NEWER>"
 # shellcheck disable=SC1091
 source scripts/lib.sh
-CIDRS="$("$TERRAFORM" -chdir=infra output -json ssh_source_cidrs | jq -c .)"
-ensure_restricted_ssh_nsg_rules "$SUB" "$RG" "$NSG_ID" "$CIDRS"
+CIDRS="$("$TERRAFORM" -chdir=infra output -json management_cidrs | jq -c .)"
 trap remove_temporary_restricted_ssh_nsg_rule EXIT
+ensure_restricted_ssh_nsg_rules "$SUB" "$RG" "$NSG_ID" "$CIDRS"
 
 ssh -i "$KEY" -o UserKnownHostsFile=.local/known_hosts "admin@$IP"
 remove_temporary_restricted_ssh_nsg_rule
@@ -388,7 +387,27 @@ jq . evidence/*/summary.json | tail -80
 
 任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；只有未启用功能可记录 `SKIP`。
 
-### 5.3 历史验证结果
+### 5.3 2026-08-30 复测结果
+
+使用本节步骤从空 state 部署 R81 无 Plan Gallery version，并先人工逐条执行 T01-T16：
+
+```text
+evidence/20260830T134155Z-manual-r81/manual-summary.json
+```
+
+人工结果为 **15 PASS / 1 SKIP**，并额外确认 `management_cidrs` 同时匹配 Azure NSG 与
+R81 GUI Clients。随后运行完整自动矩阵：
+
+```text
+evidence/20260830T135622Z/summary.json
+```
+
+自动结果同样为 **15 PASS / 1 SKIP**。唯一 SKIP 是未启用 SmartConsole HTTPS
+Inspection bootstrap 的 T07。最后 Terraform 销毁 57 个资源，并永久清除 Log
+Analytics soft-delete 副本；`cleanup-summary.json` 记录 Resource Group 不存在、
+Terraform state 为 0、soft-delete workspace 为 0。
+
+### 5.4 历史验证结果
 
 最终自动矩阵证据目录：
 
@@ -474,7 +493,7 @@ R81 Jumbo 只把 API 提升到 1.7.1，不能补齐这些接口。厂商支持�
 
 ### SmartConsole bootstrap
 
-使用与 R81 匹配的 SmartConsole，并从 `management_cidr` 连接 standalone Management：
+使用与 R81 匹配的 SmartConsole，并从 `management_cidrs` 中任一来源连接 standalone Management：
 
 1. **Gateways & Servers** → 编辑 standalone Gateway → **HTTPS Inspection**。
 2. Step 1 选择：
@@ -550,14 +569,19 @@ SUB="$("$TF" -chdir=infra output -raw subscription_id)"
 CONFIRM_DESTROY="$RG" \
   ./scripts/destroy.sh --var-file configs/r81-e2e.tfvars
 
-# 必须输出 false；state list 必须为空。
+# 必须输出 false；state list 和 soft-delete 查询必须为空。
 az group exists --subscription "$SUB" --name "$RG"
 "$TF" -chdir=infra state list
+az monitor log-analytics workspace list-deleted-workspaces \
+  --subscription "$SUB" \
+  --query "[?name=='cpr81-checkpoint-law' && resourceGroup=='$RG']"
 ```
 
 不要执行 `lock-worm.sh --yes`；WORM policy 保持 `Unlocked` 才能正常销毁。上述命令删除
 本次 Demo Resource Group 内的 Gateway、workload、日志、网络和存储资源，但不会删除
 预先存在、作为镜像源使用的 `custom-images` Gallery definition/version。
+AzureRM 会在 Resource Group 仍存在时永久删除 Log Analytics workspace，不保留默认
+14 天 soft-delete 副本；该数据删除不可逆。
 
 ## 9. 官方参考
 

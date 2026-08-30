@@ -31,63 +31,59 @@ locals {
     all = local.base_tags
   }
 
-  effective_ssh_source_cidrs = distinct(concat([var.management_cidr], var.ssh_source_cidrs))
+  management_cidrs        = distinct(var.management_cidrs)
+  primary_management_cidr = try(local.management_cidrs[0], "127.0.0.1/32")
+  additional_management_cidrs = length(local.management_cidrs) > 1 ? slice(
+    local.management_cidrs,
+    1,
+    length(local.management_cidrs),
+  ) : []
+  management_service_ports = [
+    { name = "SSH", port = "22" },
+    { name = "GaiaPortal", port = "443" },
+    { name = "SmartConsole18190", port = "18190" },
+    { name = "SmartConsole19009", port = "19009" },
+  ]
 
-  checkpoint_ssh_security_rules = [
-    for index, cidr in local.effective_ssh_source_cidrs : {
-      name                       = index == 0 ? "AllowRestrictedSSH" : format("AllowRestrictedSSH%02d", index + 1)
-      priority                   = tostring(100 + index)
+  checkpoint_primary_management_security_rules = [
+    for service_index, service in local.management_service_ports : {
+      name                       = "AllowRestricted${service.name}"
+      priority                   = tostring(100 + service_index)
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"
       source_port_ranges         = "*"
-      destination_port_ranges    = "22"
-      description                = "Restricted SSH access from ${cidr}"
-      source_address_prefix      = cidr
+      destination_port_ranges    = service.port
+      description                = "Restricted ${service.name} access from ${local.primary_management_cidr}"
+      source_address_prefix      = local.primary_management_cidr
       destination_address_prefix = "*"
     }
   ]
 
-  checkpoint_security_rules = concat(local.checkpoint_ssh_security_rules, [
-    {
-      name                       = "AllowRestrictedGaiaPortal"
-      priority                   = "200"
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_ranges         = "*"
-      destination_port_ranges    = "443"
-      description                = "Restricted Gaia Portal access"
-      source_address_prefix      = var.management_cidr
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "AllowRestrictedSmartConsole18190"
-      priority                   = "210"
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_ranges         = "*"
-      destination_port_ranges    = "18190"
-      description                = "Restricted SmartConsole access"
-      source_address_prefix      = var.management_cidr
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "AllowRestrictedSmartConsole19009"
-      priority                   = "220"
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_ranges         = "*"
-      destination_port_ranges    = "19009"
-      description                = "Restricted SmartConsole access"
-      source_address_prefix      = var.management_cidr
-      destination_address_prefix = "*"
-    },
+  checkpoint_additional_management_security_rules = flatten([
+    for cidr_index, cidr in local.additional_management_cidrs : [
+      for service_index, service in local.management_service_ports : {
+        name                       = format("AllowRestricted%s%02d", service.name, cidr_index + 2)
+        priority                   = tostring(104 + (cidr_index * length(local.management_service_ports)) + service_index)
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_ranges         = "*"
+        destination_port_ranges    = service.port
+        description                = "Restricted ${service.name} access from ${cidr}"
+        source_address_prefix      = cidr
+        destination_address_prefix = "*"
+      }
+    ]
+  ])
+  checkpoint_additional_management_security_rules_by_name = {
+    for rule in local.checkpoint_additional_management_security_rules : rule.name => rule
+  }
+
+  checkpoint_security_rules = concat(local.checkpoint_primary_management_security_rules, [
     {
       name                       = "AllowEUProtectedNetwork"
-      priority                   = "300"
+      priority                   = "500"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "*"
@@ -99,7 +95,7 @@ locals {
     },
     {
       name                       = "AllowRemoteProtectedNetwork"
-      priority                   = "310"
+      priority                   = "510"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "*"
@@ -112,7 +108,7 @@ locals {
     ], var.enable_inbound_demo ? [
     {
       name                       = "AllowRestrictedInboundDemo"
-      priority                   = "320"
+      priority                   = "520"
       direction                  = "Inbound"
       access                     = "Allow"
       protocol                   = "Tcp"

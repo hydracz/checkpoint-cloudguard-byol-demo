@@ -338,10 +338,9 @@ name      = mgmt-byol
 ```
 
 保持默认 `CHECKPOINT_TRANSPORT=auto`。它会使用自动生成的
-`.local/checkpoint-demo-ssh`，并在当前出口位于 `management_cidr` 或
-`ssh_source_cidrs` 时优先使用受限 SSH；不要仅为了 custom image 强制选择
-`run-command`。Gaia FTW 会在首次启动中重启，Azure Run Command extension 如果恰好
-跨越该窗口，可能无法完成安装。
+`.local/checkpoint-demo-ssh`，并在当前出口位于 `management_cidrs` 首项时优先使用
+受限 SSH；不要仅为了 custom image 强制选择 `run-command`。Gaia FTW 会在首次启动中
+重启，Azure Run Command extension 如果恰好跨越该窗口，可能无法完成安装。
 
 `PENDING_INGESTION` 不是通过；等待 Log Analytics 完成 ingestion 后重新执行
 `run-tests.sh`。

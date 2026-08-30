@@ -108,8 +108,8 @@ resource_group_name = "rg-checkpoint-r82-e2e"
 prefix              = "cpr82"
 company_domain      = "example.org"
 
-management_cidr = "<PRIMARY_PUBLIC_IPV4>/32"
-ssh_source_cidrs = [
+management_cidrs = [
+  "<PRIMARY_PUBLIC_IPV4>/32",
   "<ADDITIONAL_PUBLIC_IPV4>/32",
   "<APPROVED_OFFICE_CIDR>",
 ]
@@ -143,10 +143,10 @@ export CHECKPOINT_RECONCILE_SSH_RULE=true
 ./scripts/deploy.sh --var-file "<R82_TFVARS>"
 ```
 
-`management_cidr` 始终自动加入 SSH 白名单；`ssh_source_cidrs` 只填写额外来源。单个
-公网 IP 必须使用 `/32`，办公室或 VPN 出口可写批准的 CIDR。Terraform 为每个来源创建
-独立 TCP/22 NSG rule，策略脚本把同一列表写入 `CloudGuard-SSH-Sources`。普通客户环境
-不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
+`management_cidrs` 是唯一管理员来源清单。单个公网 IP 必须使用 `/32`，办公室或 VPN
+出口可写批准的 CIDR；执行首次部署的当前出口放在首项。Terraform 为每个来源创建
+SSH、Gaia Portal 和 SmartConsole NSG rules，策略脚本把同一列表写入 GUI Clients 和
+`CloudGuard-SSH-Sources`。普通客户环境不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
 
 部署脚本接受 `checkpoint:check-point-cg-r82:mgmt-byol` terms，并把相同 Plan 写入 VM。
 Preflight 同时检查 definition Plan、Linux/Generalized/x64/Gen1、目标 region 副本和
@@ -306,7 +306,8 @@ CONFIRM_DESTROY="$(
 ```
 
 WORM policy 默认 `Unlocked`。不要仅为测试执行 `lock-worm.sh --yes`；Locked 后在保留
-期内可能阻止 Terraform destroy。
+期内可能阻止 Terraform destroy。AzureRM 会永久删除 Log Analytics workspace，不保留
+默认 14 天 soft-delete 副本；该数据删除不可逆。
 
 ## 10. 官方参考
 

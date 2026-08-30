@@ -134,14 +134,9 @@ output "policy_package_name" {
   value = var.policy_package_name
 }
 
-output "management_cidr" {
-  value       = var.management_cidr
-  description = "Primary source CIDR admitted to SSH and the Gaia/SmartConsole management ports."
-}
-
-output "ssh_source_cidrs" {
-  value       = local.effective_ssh_source_cidrs
-  description = "Effective source CIDRs admitted to SSH by both Azure NSG and the Check Point access policy."
+output "management_cidrs" {
+  value       = local.management_cidrs
+  description = "Administrator CIDRs admitted to SSH, Gaia Portal, and SmartConsole by Azure and Check Point controls."
 }
 
 output "company_domain" {

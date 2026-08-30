@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 20 ]]; then
-  echo "Expected 20 arguments; received $#." >&2
+if [[ $# -ne 19 ]]; then
+  echo "Expected 19 arguments; received $#." >&2
   exit 2
 fi
 
@@ -21,11 +21,10 @@ TLS_ENABLED="${12}"
 INBOUND_ENABLED="${13}"
 INBOUND_SOURCE_CIDR="${14}"
 PUBLIC_IP="${15}"
-MANAGEMENT_CIDR="${16}"
-SSH_SOURCE_CIDRS_B64="${17}"
-COMPANY_DOMAIN="${18}"
-CHECKPOINT_RELEASE="${19}"
-R81_TLS_MANUAL="${20}"
+MANAGEMENT_CIDRS_B64="${16}"
+COMPANY_DOMAIN="${17}"
+CHECKPOINT_RELEASE="${18}"
+R81_TLS_MANUAL="${19}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
@@ -80,6 +79,8 @@ decode_json() {
 require_command openssl
 require_command base64
 require_command clish
+require_command cp_conf
+require_command python3
 require_command timeout
 wait_for_command mgmt_cli
 wait_for_command jq
@@ -88,7 +89,8 @@ wait_for_command cp_log_export
 COUNTRIES_JSON="$(decode_json "$COUNTRIES_B64")"
 APPLICATIONS_JSON="$(decode_json "$APPLICATIONS_B64")"
 URLS_JSON="$(decode_json "$URLS_B64")"
-SSH_SOURCE_CIDRS_JSON="$(decode_json "$SSH_SOURCE_CIDRS_B64")"
+MANAGEMENT_CIDRS_JSON="$(decode_json "$MANAGEMENT_CIDRS_B64")"
+MANAGEMENT_CIDR="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[0]')"
 
 log "Waiting for the standalone Management API..."
 ready=false
@@ -117,6 +119,25 @@ for internal_cidr in "$EU_CIDR" "$REMOTE_CIDR" "$COLLECTOR_CIDR"; do
   clish -c "set static-route $internal_cidr nexthop gateway address $BACKEND_AZURE_GATEWAY on"
 done
 clish -c "save config"
+
+GUI_CLIENTS=()
+while IFS= read -r cidr; do
+  gui_client="$(
+    python3 - "$cidr" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.ip_network(sys.argv[1], strict=False)
+print(f"{network.network_address}/{network.netmask}")
+PY
+  )"
+  GUI_CLIENTS+=("$gui_client")
+done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
+(( ${#GUI_CLIENTS[@]} > 0 )) || {
+  echo "At least one management CIDR is required." >&2
+  exit 1
+}
+cp_conf client createlist "${GUI_CLIENTS[@]}" >/dev/null
 
 SESSION_FILE="$(mktemp)"
 PUBLISHED=false
@@ -269,7 +290,7 @@ while IFS= read -r cidr; do
   management_ssh_index=$((management_ssh_index + 1))
   if ((management_ssh_index == 1)); then
     [[ "$cidr" == "$MANAGEMENT_CIDR" ]] || {
-      echo "The first SSH source CIDR must match management_cidr." >&2
+      echo "The first management CIDR must match the bootstrap management network." >&2
       exit 1
     }
     continue
@@ -277,9 +298,9 @@ while IFS= read -r cidr; do
   printf -v object_name '%s-%02d' "$MANAGEMENT_SSH_NETWORK_PREFIX" "$management_ssh_index"
   ensure_network "$object_name" "${cidr%/*}" "${cidr#*/}"
   MANAGEMENT_SSH_OBJECTS+=("$object_name")
-done < <(printf '%s' "$SSH_SOURCE_CIDRS_JSON" | jq -e -r '.[]')
+done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
 ((management_ssh_index > 0)) || {
-  echo "At least one SSH source CIDR is required." >&2
+  echo "At least one management CIDR is required." >&2
   exit 1
 }
 management_group_command=(add group name "$MANAGEMENT_SOURCES_GROUP")

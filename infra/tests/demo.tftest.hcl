@@ -9,6 +9,7 @@ override_module {
     vnet_name                   = "checkpoint-mock-hub-vnet"
     vnet_id                     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet"
     vm_name                     = "checkpoint-mock-gateway"
+    nsg_id                      = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/networkSecurityGroups/rg-checkpoint-mock-nsg"
     public_ip_address           = "198.51.100.20"
     frontend_private_ip_address = "10.60.0.4"
     backend_private_ip_address  = "10.60.1.4"
@@ -23,7 +24,7 @@ run "default_demo_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -44,10 +45,10 @@ run "default_demo_plan" {
 
   assert {
     condition = (
-      length(local.effective_ssh_source_cidrs) == 1 &&
-      local.effective_ssh_source_cidrs[0] == "203.0.113.10/32"
+      length(local.management_cidrs) == 1 &&
+      local.management_cidrs[0] == "203.0.113.10/32"
     )
-    error_message = "management_cidr must always be included in the effective SSH source list."
+    error_message = "The management CIDR list must drive all administrator access."
   }
 
   assert {
@@ -85,7 +86,7 @@ run "default_demo_plan" {
   }
 }
 
-run "multiple_ssh_source_cidrs" {
+run "multiple_management_cidrs" {
   command = plan
 
   variables {
@@ -93,8 +94,7 @@ run "multiple_ssh_source_cidrs" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
-    ssh_source_cidrs               = ["203.0.113.10/32", "198.51.100.0/24"]
+    management_cidrs               = ["203.0.113.10/32", "198.51.100.0/24"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -105,15 +105,36 @@ run "multiple_ssh_source_cidrs" {
 
   assert {
     condition = (
-      length(local.effective_ssh_source_cidrs) == 2 &&
-      local.effective_ssh_source_cidrs[0] == "203.0.113.10/32" &&
-      local.effective_ssh_source_cidrs[1] == "198.51.100.0/24" &&
-      length(local.checkpoint_ssh_security_rules) == 2 &&
-      local.checkpoint_ssh_security_rules[1].name == "AllowRestrictedSSH02" &&
-      local.checkpoint_ssh_security_rules[1].source_address_prefix == "198.51.100.0/24"
+      length(local.management_cidrs) == 2 &&
+      length(local.checkpoint_primary_management_security_rules) == 4 &&
+      length(local.checkpoint_additional_management_security_rules) == 4 &&
+      local.checkpoint_additional_management_security_rules[0].name == "AllowRestrictedSSH02" &&
+      local.checkpoint_additional_management_security_rules[0].source_address_prefix == "198.51.100.0/24" &&
+      local.checkpoint_additional_management_security_rules[3].name == "AllowRestrictedSmartConsole1900902" &&
+      azurerm_network_security_rule.checkpoint_additional_management["AllowRestrictedSSH02"].priority == 104
     )
-    error_message = "Each distinct SSH source CIDR must receive a deterministic, restricted NSG rule."
+    error_message = "Each management CIDR must receive deterministic rules for all four administrator services."
   }
+}
+
+run "invalid_management_cidrs" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidrs               = ["0.0.0.0/00", "203.0.113.10/24"]
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+  }
+
+  expect_failures = [var.management_cidrs]
 }
 
 run "custom_image_plan" {
@@ -124,7 +145,7 @@ run "custom_image_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -152,7 +173,7 @@ run "custom_image_without_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R81"
@@ -176,7 +197,7 @@ run "invalid_r82_planless_custom_image" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -196,7 +217,7 @@ run "invalid_r81_tls_automation" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R81"
@@ -217,7 +238,7 @@ run "r81_manual_tls_bootstrap" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R81"
@@ -242,7 +263,7 @@ run "invalid_r81_marketplace_source" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R81"
@@ -262,7 +283,7 @@ run "invalid_custom_image_id" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -282,7 +303,7 @@ run "restricted_inbound_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -318,7 +339,7 @@ run "audit_export_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"

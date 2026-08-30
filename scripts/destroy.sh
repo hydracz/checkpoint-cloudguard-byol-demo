@@ -36,4 +36,5 @@ else
     -auto-approve \
     -parallelism="$TF_PARALLELISM"
 fi
-echo "Terraform destroy completed for $RG. A locked WORM policy can intentionally prevent storage deletion until retention expires."
+rm -f "$INFRA/audit.auto.tfvars.json" "$LOCAL_DIR/plan.tfplan"
+echo "Terraform destroy completed for $RG. Log Analytics is permanently deleted; a locked WORM policy can intentionally prevent storage deletion until retention expires."

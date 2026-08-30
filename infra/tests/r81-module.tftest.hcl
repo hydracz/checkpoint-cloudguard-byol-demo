@@ -9,7 +9,7 @@ run "r81_planless_full_module_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidr                = "203.0.113.10/32"
+    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R81"

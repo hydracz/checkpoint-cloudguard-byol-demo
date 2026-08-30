@@ -36,7 +36,9 @@ module "checkpoint" {
   zone                           = ""
   smart_1_cloud_token            = ""
 
-  management_GUI_client_network = var.management_cidr
+  # The upstream first-boot interface accepts one network; post-deploy policy
+  # configuration synchronizes the complete management_cidrs list.
+  management_GUI_client_network = local.primary_management_cidr
 
   vnet_name                       = local.hub_vnet_name
   frontend_subnet_name            = "checkpoint-frontend"
@@ -52,4 +54,21 @@ module "checkpoint" {
   add_storage_account_ip_rules    = false
   storage_account_additional_ips  = []
   security_rules                  = local.checkpoint_security_rules
+}
+
+resource "azurerm_network_security_rule" "checkpoint_additional_management" {
+  for_each = local.checkpoint_additional_management_security_rules_by_name
+
+  name                        = each.key
+  priority                    = tonumber(each.value.priority)
+  direction                   = each.value.direction
+  access                      = each.value.access
+  protocol                    = each.value.protocol
+  source_port_range           = each.value.source_port_ranges
+  destination_port_range      = each.value.destination_port_ranges
+  description                 = each.value.description
+  source_address_prefix       = each.value.source_address_prefix
+  destination_address_prefix  = each.value.destination_address_prefix
+  resource_group_name         = module.checkpoint.resource_group_name
+  network_security_group_name = reverse(split("/", module.checkpoint.nsg_id))[0]
 }

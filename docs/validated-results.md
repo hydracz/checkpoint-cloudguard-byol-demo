@@ -116,7 +116,7 @@ T13 为预期 `SKIP`，因为 example 默认 `enable_inbound_demo=false`，不�
 
 本次故意强制 `CHECKPOINT_TRANSPORT=run-command` 的首次尝试跨越 Gaia FTW reboot
 时，Azure Run Command handler 没有成功安装并留下 stale `Updating`。Guest 中没有
-policy 进程，Management API 本身正常。随后使用受 `management_cidr` 限制的 SSH
+policy 进程，Management API 本身正常。随后使用受 `management_cidrs` 限制的 SSH
 执行同一幂等 policy 脚本，全部功能测试通过。仓库默认的
 `CHECKPOINT_TRANSPORT=auto` 会优先使用 SSH，因此不要为 custom image 强制设为
 `run-command`，除非已在目标 image/区域验证该 extension 路径。
@@ -345,13 +345,13 @@ allowProtectedAppendWrites: true
 | Access Layer 默认只启用 Firewall | 设置 `applications-and-url-filtering=true` |
 | Gateway 本机日志和 Azure metadata 被默认拒绝 | 增加来源仅为 Gateway object 的服务规则 |
 | Anti-Spoofing 要求两块接口 | Gateway object 同时定义 `eth0` External 和 `eth1` Internal |
-| Policy 安装后 SSH 需要继续可用 | Azure NSG 和 Check Point policy 使用同一个 `management_cidr` |
+| Policy 安装后 SSH 需要继续可用 | Azure NSG 和 Check Point policy 使用同一个 `management_cidrs` 列表 |
 
 ## 客户环境需要复查的项目
 
 - 在 Check Point User Center 激活正式 BYOL，并检查 Firewall、Application
   Control、URL Filtering 和 HTTPS Inspection Software Blade。
-- 把 `management_cidr` 设置为客户运维出口 `/32`，不使用 `0.0.0.0/0`。
+- 把所有客户运维出口写入 `management_cidrs`，单 IP 使用 `/32`，不使用 `0.0.0.0/0`。
 - 在每次部署前重新检查 EU 区域容量、vCPU quota 和 VM SKU。
 - 根据客户批准的端点执行 T13，再判断是否启用入站 DNAT。
 - 根据合规和成本要求确认保留期；确认后再执行不可逆 WORM lock。

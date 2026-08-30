@@ -147,10 +147,9 @@ company_domain      = "example.org"
 location        = "westeurope"
 remote_location = "northeurope"
 
-# Gaia Portal/SmartConsole 的主运维出口；也自动允许 SSH。
-management_cidr = "203.0.113.10/32"
-# 可选的额外 SSH 出口；每个公网 IP 写成 /32，也可填写办公室 CIDR。
-ssh_source_cidrs = [
+# 所有管理员来源统一配置；首项必须是执行首次部署的当前出口。
+management_cidrs = [
+  "203.0.113.10/32",
   "198.51.100.20/32",
   "192.0.2.0/24",
 ]
@@ -165,8 +164,7 @@ collector_vm_size  = "Standard_D4ls_v6"
 | 参数名 | 是否必填 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `subscription_id` | 是 | string | 无 | Azure CLI 和 Terraform 明确操作的客户订阅 |
-| `management_cidr` | 是 | string | 无 | 允许运维入口的公网 CIDR，不能是 `0.0.0.0/0` |
-| `ssh_source_cidrs` | 否 | list(string) | `[]` | 额外允许 SSH 的公网 `/32` 或 CIDR；`management_cidr` 始终自动包含 |
+| `management_cidrs` | 是 | list(string) | 无 | 统一允许 SSH、Gaia Portal 和 SmartConsole 的管理员公网 `/32` 或 CIDR；首项是部署执行器 |
 | `company_domain` | 否 | string | `example.org` | 演示 HTTPS Inspection CA 的 `issued-by`；可填写客户批准的公司域名 |
 | `location` | 否 | string | `westeurope` | Hub、Check Point、主工作负载和日志资源所在区域 |
 | `remote_location` | 否 | string | `northeurope` | 远端工作负载所在区域，必须与 `location` 不同 |
@@ -313,7 +311,7 @@ Management API 和 Log Exporter 命令最多 30 分钟，避免首次启动尚�
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
 若测试订阅自动删除 Terraform 创建的 SSH NSG rules，可在确认符合 Azure Policy 后
 显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只按 Terraform output 中的
-`ssh_source_cidrs` 恢复 TCP/22 临时 rules，不会创建开放来源，并在操作结束时删除它
+`management_cidrs` 恢复 TCP/22 临时 rules，不会创建开放来源，并在操作结束时删除它
 临时创建的 rules。普通客户环境已有稳定的入站白名单，不应设置该开关。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
@@ -349,8 +347,7 @@ terraform -chdir=infra output
 
 - `subscription_id` 是客户目标订阅。
 - `checkpoint_backend_private_ip` 是两个工作负载的 NVA 下一跳。
-- `checkpoint_management_url` 仅能从 `management_cidr` 访问；SSH 还允许
-  `ssh_source_cidrs` 中的额外来源。
+- `checkpoint_management_url`、SSH 和 SmartConsole 仅能从 `management_cidrs` 访问。
 - Log Analytics 和 Storage 位于主 EU region。
 
 ### 2. 检查数据路径
@@ -402,6 +399,9 @@ CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \
   ./scripts/destroy.sh --var-file configs/demo.tfvars
 ```
 
+AzureRM 会在 Resource Group 仍存在时永久删除 Log Analytics workspace，不保留默认
+14 天 soft-delete 恢复副本，避免同名重建恢复旧日志和 Data Export。该数据删除不可逆。
+
 检查条件见 [检查矩阵](docs/test-matrix.md)。历史现场输出见
 [现场验证记录](docs/validated-results.md)，不代表客户订阅当前状态。
 
@@ -415,7 +415,7 @@ CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \
 | `D8s_v6` 无法部署 Check Point | Dv6 仅支持 Gen2，当前 `standalone` `mgmt-byol` 镜像为 Gen1；使用 `D8s_v5`、`F16s` 或经 Check Point 支持矩阵确认的其他 Gen1 规格。 |
 | SSH 用户 `notused` 失败 | Gaia 登录用户是 `admin`；`notused` 只是 Azure metadata 兼容占位。 |
 | 重建 VM 后 SSH host key changed | 删除项目专用缓存：`ssh-keygen -R <GATEWAY_PUBLIC_IP> -f .local/known_hosts`，核对 Azure Public IP 后重试。 |
-| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先使用 `.local/checkpoint-demo-ssh`；确保当前出口 `/32` 位于 `management_cidr` 或 `ssh_source_cidrs`。 |
+| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先使用 `.local/checkpoint-demo-ssh`；确保当前出口 `/32` 位于 `management_cidrs` 且排在首项。 |
 | Policy install 报只有一块 interface | Gateway object 必须同时定义 `eth0` External 和 `eth1` Internal。 |
 | Updatable Objects repository 未初始化 | 当前脚本会自动执行初始化；首次需要 Check Point 能访问更新服务。 |
 | Storage data-plane 403/404 | 审计 Storage/container/WORM 已改为 ARM management-plane template，不要求公网 data-plane。 |

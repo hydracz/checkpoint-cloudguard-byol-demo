@@ -22,6 +22,12 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+terraform_state_has() {
+  local address="$1" state_list
+  state_list="$("$TERRAFORM" -chdir="$INFRA" state list 2>/dev/null)" || return 1
+  grep -Fqx -- "$address" <<<"$state_list"
+}
+
 RESTRICTED_SSH_RULE_CREATED="${RESTRICTED_SSH_RULE_CREATED:-false}"
 RESTRICTED_SSH_SUBSCRIPTION=""
 RESTRICTED_SSH_RESOURCE_GROUP=""
@@ -29,13 +35,13 @@ RESTRICTED_SSH_NSG_NAME=""
 RESTRICTED_SSH_RULE_NAMES=()
 
 ensure_restricted_ssh_nsg_rules() {
-  local subscription="$1" resource_group="$2" nsg_id="$3" ssh_source_cidrs_json="$4"
+  local subscription="$1" resource_group="$2" nsg_id="$3" management_cidrs_json="$4"
   local gateway_nsg_name="${nsg_id##*/}"
   local cidr index=0 priority rule_name
 
-  printf '%s' "$ssh_source_cidrs_json" |
+  printf '%s' "$management_cidrs_json" |
     jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null ||
-    die "ssh_source_cidrs Terraform output must be a non-empty JSON string array."
+    die "management_cidrs Terraform output must be a non-empty JSON string array."
 
   while IFS= read -r cidr; do
     if ((index == 0)); then
@@ -43,7 +49,7 @@ ensure_restricted_ssh_nsg_rules() {
     else
       printf -v rule_name 'AllowRestrictedSSH%02d' "$((index + 1))"
     fi
-    priority=$((100 + index))
+    priority=$((100 + (index * 4)))
 
     if az network nsg rule show \
       --subscription "$subscription" \
@@ -78,7 +84,7 @@ ensure_restricted_ssh_nsg_rules() {
     RESTRICTED_SSH_NSG_NAME="$gateway_nsg_name"
     RESTRICTED_SSH_RULE_NAMES+=("$rule_name")
     index=$((index + 1))
-  done < <(printf '%s' "$ssh_source_cidrs_json" | jq -e -r '.[]')
+  done < <(printf '%s' "$management_cidrs_json" | jq -e -r '.[]')
 }
 
 remove_temporary_restricted_ssh_nsg_rule() {

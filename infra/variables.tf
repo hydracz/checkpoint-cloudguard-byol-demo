@@ -87,30 +87,26 @@ variable "remote_location" {
   }
 }
 
-variable "management_cidr" {
-  description = "Public administrator CIDR allowed to reach SSH, Gaia Portal, and SmartConsole ports. Never use 0.0.0.0/0."
-  type        = string
-
-  validation {
-    condition     = can(cidrnetmask(var.management_cidr)) && var.management_cidr != "0.0.0.0/0"
-    error_message = "management_cidr must be a valid, restricted IPv4 CIDR and cannot be 0.0.0.0/0."
-  }
-}
-
-variable "ssh_source_cidrs" {
-  description = "Additional public administrator CIDRs allowed to reach SSH. management_cidr is always included automatically."
+variable "management_cidrs" {
+  description = "Public administrator CIDRs allowed to reach SSH, Gaia Portal, and SmartConsole. Put the deployment operator's CIDR first."
   type        = list(string)
-  default     = []
 
   validation {
     condition = (
-      length(var.ssh_source_cidrs) <= 50 &&
+      length(var.management_cidrs) > 0 &&
+      length(var.management_cidrs) <= 50 &&
       alltrue([
-        for cidr in var.ssh_source_cidrs :
-        can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0"
+        for cidr in var.management_cidrs :
+        try(
+          cidrnetmask(cidr) != "" &&
+          tonumber(split("/", cidr)[1]) >= 1 &&
+          tonumber(split("/", cidr)[1]) <= 32 &&
+          cidrhost(cidr, 0) == split("/", cidr)[0],
+          false,
+        )
       ])
     )
-    error_message = "ssh_source_cidrs may contain at most 50 valid, restricted IPv4 CIDRs and cannot contain 0.0.0.0/0."
+    error_message = "management_cidrs must contain 1-50 canonical, restricted IPv4 networks with /1-/32 prefixes; use /32 for one IP."
   }
 }
 
@@ -344,12 +340,14 @@ variable "inbound_demo_source_cidr" {
   default     = ""
 
   validation {
-    condition = !var.enable_inbound_demo || (
-      var.inbound_demo_source_cidr != "" &&
-      var.inbound_demo_source_cidr != "0.0.0.0/0" &&
-      can(cidrnetmask(var.inbound_demo_source_cidr))
+    condition = !var.enable_inbound_demo || try(
+      cidrnetmask(var.inbound_demo_source_cidr) != "" &&
+      tonumber(split("/", var.inbound_demo_source_cidr)[1]) >= 1 &&
+      tonumber(split("/", var.inbound_demo_source_cidr)[1]) <= 32 &&
+      cidrhost(var.inbound_demo_source_cidr, 0) == split("/", var.inbound_demo_source_cidr)[0],
+      false,
     )
-    error_message = "enable_inbound_demo=true requires a restricted inbound_demo_source_cidr."
+    error_message = "enable_inbound_demo=true requires a canonical, restricted IPv4 network; use /32 for one IP."
   }
 }
 

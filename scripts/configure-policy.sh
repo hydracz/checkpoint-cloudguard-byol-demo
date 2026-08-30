@@ -19,9 +19,8 @@ output_value() {
 }
 
 SUBSCRIPTION="$(output_value subscription_id)"
-MANAGEMENT_CIDR="$(output_value management_cidr)"
-SSH_SOURCE_CIDRS_JSON="$(printf '%s' "$outputs" | jq -e -c '.ssh_source_cidrs.value')"
-SSH_SOURCE_CIDRS_B64="$(printf '%s' "$SSH_SOURCE_CIDRS_JSON" | openssl base64 -A)"
+MANAGEMENT_CIDRS_JSON="$(printf '%s' "$outputs" | jq -e -c '.management_cidrs.value')"
+MANAGEMENT_CIDRS_B64="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | openssl base64 -A)"
 COMPANY_DOMAIN="$(output_value company_domain)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 RG="$(output_value resource_group_name)"
@@ -75,8 +74,7 @@ policy_args=(
   "$INBOUND_ENABLED"
   "$INBOUND_SOURCE_CIDR"
   "$PUBLIC_IP"
-  "$MANAGEMENT_CIDR"
-  "$SSH_SOURCE_CIDRS_B64"
+  "$MANAGEMENT_CIDRS_B64"
   "$COMPANY_DOMAIN"
   "$CHECKPOINT_RELEASE"
   "$R81_TLS_MANUAL"
@@ -112,8 +110,8 @@ fi
 if [[ "$transport" != "run-command" && "$reconcile_ssh_rule" == "true" ]]; then
   [[ -n "$GATEWAY_NSG_ID" ]] ||
     die "CHECKPOINT_RECONCILE_SSH_RULE=true requires a fresh Terraform apply that includes checkpoint_nsg_id."
-  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$SSH_SOURCE_CIDRS_JSON"
   trap remove_temporary_restricted_ssh_nsg_rule EXIT
+  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
 fi
 
 if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
@@ -130,7 +128,7 @@ if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
     fi
     ((SECONDS >= ssh_deadline)) && break
     if [[ "$reconcile_ssh_rule" == "true" ]]; then
-      ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$SSH_SOURCE_CIDRS_JSON"
+      ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
     fi
     sleep "$ssh_retry_seconds"
   done
