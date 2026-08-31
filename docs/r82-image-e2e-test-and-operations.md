@@ -148,6 +148,27 @@ export CHECKPOINT_RECONCILE_SSH_RULE=true
 SSH、Gaia Portal 和 SmartConsole NSG rules，策略脚本把同一列表写入 GUI Clients 和
 `CloudGuard-SSH-Sources`。普通客户环境不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
 
+SSH Public Key 模式不会生成默认 Gaia Portal 密码。R82 与 R81 使用相同步骤：
+
+```bash
+TF="${TERRAFORM:-terraform}"
+IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
+ssh -i .local/checkpoint-demo-ssh "admin@$IP"
+```
+
+在 Gaia shell 中交互设置：
+
+```text
+clish
+set user admin password
+save config
+exit
+```
+
+然后从 `management_cidrs` 中的来源打开
+`terraform -chdir=infra output -raw checkpoint_management_url`，使用用户名 `admin`
+和新密码登录。`notused` 是 Azure metadata 占位用户；密码不会进入 Terraform state。
+
 部署脚本接受 `checkpoint:check-point-cg-r82:mgmt-byol` terms，并把相同 Plan 写入 VM。
 Preflight 同时检查 definition Plan、Linux/Generalized/x64/Gen1、目标 region 副本和
 请求的 VM SKU。

@@ -350,7 +350,37 @@ terraform -chdir=infra output
 - `checkpoint_management_url`、SSH 和 SmartConsole 仅能从 `management_cidrs` 访问。
 - Log Analytics 和 Storage 位于主 EU region。
 
-### 2. 检查数据路径
+### 2. 设置并登录 Gaia Portal
+
+本仓库使用 SSH Public Key 部署，不会生成默认 Web 密码。Gaia Portal 用户名是
+`admin`；Azure metadata 中的 `notused` 只是占位用户。先使用仓库私钥登录：
+
+```bash
+TF="${TERRAFORM:-terraform}"
+IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
+ssh -i .local/checkpoint-demo-ssh "admin@$IP"
+```
+
+在 Gaia shell 中交互设置密码，避免密码进入命令历史、环境变量或 Terraform state：
+
+```text
+clish
+set user admin password
+save config
+exit
+```
+
+按提示输入并确认符合客户密码策略的新密码，然后打开：
+
+```bash
+"$TF" -chdir=infra output -raw checkpoint_management_url
+```
+
+使用 `admin` 和新密码登录。当前公网来源必须在 `management_cidrs` 中，且
+`AllowRestrictedGaiaPortal` 对应的 TCP/443 NSG rule 必须存在。重新创建 Gateway 后需
+重新设置密码。
+
+### 3. 检查数据路径
 
 ```bash
 ./scripts/run-tests.sh
@@ -378,13 +408,13 @@ terraform -chdir=infra output
 `SKIP` 表示该功能未启用。脚本默认等待 Log Analytics 摄取最多 30 分钟；
 `PENDING_INGESTION` 或任何 `FAIL` 都会让命令返回非零。
 
-### 3. 查询日志
+### 4. 查询日志
 
 ```bash
 ./scripts/query-logs.sh --hours 2
 ```
 
-### 4. 确认后锁定 WORM
+### 5. 确认后锁定 WORM
 
 ```bash
 ./scripts/lock-worm.sh --yes
@@ -392,7 +422,7 @@ terraform -chdir=infra output
 
 此操作不可逆，锁定后保留期不能缩短，Terraform destroy 在保留期内可能无法删除 Storage。
 
-### 5. 销毁
+### 6. 销毁
 
 ```bash
 CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \

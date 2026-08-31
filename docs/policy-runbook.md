@@ -8,10 +8,12 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 
 若首次策略安装提示 blade 未授权：
 
-1. 从 `management_cidrs` 中任一批准来源登录 Terraform output 中的 Gaia Portal 或 SmartConsole 地址。
-2. 按 Check Point User Center/SmartUpdate 流程激活客户 BYOL。
-3. 确认 Firewall、Application Control、URL Filtering 和 HTTPS Inspection entitlement。
-4. 重新运行 `./scripts/configure-policy.sh`。
+1. 若 Gaia Portal 尚无密码，先通过 `.local/checkpoint-demo-ssh` 登录 `admin`，在
+   Clish 中执行 `set user admin password` 和 `save config`。
+2. 从 `management_cidrs` 中任一批准来源登录 Terraform output 中的 Gaia Portal 或 SmartConsole 地址。
+3. 按 Check Point User Center/SmartUpdate 流程激活客户 BYOL。
+4. 确认 Firewall、Application Control、URL Filtering 和 HTTPS Inspection entitlement。
+5. 重新运行 `./scripts/configure-policy.sh`。
 
 ## Access Control 规则顺序
 

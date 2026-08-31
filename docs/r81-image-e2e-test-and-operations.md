@@ -204,6 +204,26 @@ exit
 预期 guest 为 R81、Access Policy 已安装、`azure-monitor` Log Exporter 为 `Running`。
 Azure VM metadata 中的 `notused` 不是登录用户，必须使用 `admin`。
 
+该 SSH Public Key 部署没有默认 Gaia Portal 密码。使用上面的仓库私钥登录后，在 Gaia
+shell 中交互设置 `admin` Web 密码：
+
+```text
+clish
+set user admin password
+save config
+exit
+```
+
+按提示输入并确认符合客户密码策略的新密码。然后取得 Portal URL：
+
+```bash
+"$TF" -chdir=infra output -raw checkpoint_management_url
+```
+
+从 `management_cidrs` 中的来源打开该 HTTPS URL，使用用户名 `admin` 和新密码登录。
+TCP/443 对应 `AllowRestrictedGaiaPortal` NSG rule；密码不会写入 tfvars、环境变量或
+Terraform state。重新创建 Gateway 后需要重新设置。
+
 如果仅测试订阅的组织策略已删除 SSH rule，可在同一 shell 临时恢复、登录并清理：
 
 ```bash
