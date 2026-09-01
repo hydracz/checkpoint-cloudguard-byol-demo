@@ -165,16 +165,76 @@ resolve_var_file() {
 tfvars_string_value() {
   local file="${1:-}" key="$2"
   [[ -n "$file" && -f "$file" ]] || return 0
-  awk -v key="$key" '
-    $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-      line = $0
-      sub(/^[^=]*=[[:space:]]*/, "", line)
-      if (match(line, /^"[^"]*"/)) {
-        print substr(line, 2, RLENGTH - 2)
-        exit
-      }
-    }
-  ' "$file"
+  python3 - "$file" "$key" <<'PY'
+import json
+import re
+import sys
+
+path, key = sys.argv[1:]
+assignment = re.compile(
+    rf"^\s*{re.escape(key)}\s*=\s*(\"(?:\\.|[^\"\\])*\")"
+)
+with open(path, encoding="utf-8") as tfvars:
+    for line in tfvars:
+        match = assignment.match(line)
+        if match:
+            print(json.loads(match.group(1)))
+            break
+PY
+}
+
+validate_checkpoint_admin_password() {
+  local password="$1" category_count=0
+
+  ((${#password} >= 8 && ${#password} <= 128)) ||
+    die "checkpoint_admin_password must be 8-128 characters."
+  [[ "$password" != *'*'* ]] ||
+    die "checkpoint_admin_password must not contain '*', which Gaia does not support."
+  [[ "$password" != *$'\n'* && "$password" != *$'\r'* ]] ||
+    die "checkpoint_admin_password must not contain a newline."
+  [[ "$password" =~ [[:lower:]] ]] && ((category_count += 1))
+  [[ "$password" =~ [[:upper:]] ]] && ((category_count += 1))
+  [[ "$password" =~ [[:digit:]] ]] && ((category_count += 1))
+  [[ "$password" =~ [^[:alnum:]] ]] && ((category_count += 1))
+  ((category_count >= 3)) ||
+    die "checkpoint_admin_password must contain at least three of lowercase, uppercase, number, and special characters."
+}
+
+checkpoint_password_matches_hash() {
+  local password="$1" password_hash="$2" salt candidate
+  local hash_pattern='^\$6\$([A-Za-z0-9./]{2,16})\$[A-Za-z0-9./]{1,86}$'
+
+  [[ "$password_hash" =~ $hash_pattern ]] || return 1
+  salt="${BASH_REMATCH[1]}"
+  candidate="$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin)" ||
+    return 1
+  [[ "$candidate" == "$password_hash" ]]
+}
+
+generate_checkpoint_password_hash() {
+  local password="$1" password_hash
+  local hash_pattern='^\$6\$[A-Za-z0-9./]{2,16}\$[A-Za-z0-9./]{1,86}$'
+
+  password_hash="$(printf '%s' "$password" | openssl passwd -6 -stdin)" ||
+    die "OpenSSL cannot generate the SHA-512 crypt hash required by Gaia."
+  [[ "$password_hash" =~ $hash_pattern ]] ||
+    die "OpenSSL returned an unsupported password hash format."
+  printf '%s\n' "$password_hash"
+}
+
+persist_deployment_secrets() {
+  local secrets_file="$LOCAL_DIR/deployment-secrets.env"
+  local temporary_file="${secrets_file}.tmp.$$"
+
+  umask 077
+  {
+    printf 'export TF_VAR_sic_key=%q\n' "$TF_VAR_sic_key"
+    if [[ -n "${TF_VAR_checkpoint_admin_password_hash:-}" ]]; then
+      printf 'export TF_VAR_checkpoint_admin_password_hash=%q\n' "$TF_VAR_checkpoint_admin_password_hash"
+    fi
+  } >"$temporary_file"
+  chmod 600 "$temporary_file"
+  mv "$temporary_file" "$secrets_file"
 }
 
 load_runtime_environment() {
@@ -184,13 +244,16 @@ load_runtime_environment() {
 }
 
 load_deployment_environment() {
-  local var_file="${1:-}" configured_subscription target_subscription
+  local var_file="${1:-}" require_checkpoint_password="${2:-true}"
+  local configured_subscription target_subscription
+  local configured_admin_password checkpoint_admin_password
   local sp_tenant sp_client sp_secret
   local supplied_public_key private_public_key
 
   load_runtime_environment
   require_cmd openssl
   require_cmd az
+  require_cmd python3
   require_cmd ssh-keygen
 
   mkdir -p "$LOCAL_DIR"
@@ -232,7 +295,7 @@ load_deployment_environment() {
   fi
 
   if [[ -f "$LOCAL_DIR/deployment-secrets.env" ]]; then
-    # This file is generated locally with a hex-only value.
+    # This file is generated locally and contains only the SIC key and password hash.
     # shellcheck disable=SC1091
     source "$LOCAL_DIR/deployment-secrets.env"
   fi
@@ -240,9 +303,28 @@ load_deployment_environment() {
   if [[ -z "${TF_VAR_sic_key:-}" ]]; then
     TF_VAR_sic_key="$(openssl rand -hex 24)"
     export TF_VAR_sic_key
-    umask 077
-    printf 'export TF_VAR_sic_key=%q\n' "$TF_VAR_sic_key" >"$LOCAL_DIR/deployment-secrets.env"
   fi
+
+  if [[ "$require_checkpoint_password" == "true" ]]; then
+    configured_admin_password="$(tfvars_string_value "$var_file" checkpoint_admin_password)"
+    checkpoint_admin_password="${configured_admin_password:-${TF_VAR_checkpoint_admin_password:-}}"
+    [[ -n "$checkpoint_admin_password" ]] ||
+      die "Set checkpoint_admin_password in the tfvars file or TF_VAR_checkpoint_admin_password."
+    validate_checkpoint_admin_password "$checkpoint_admin_password"
+
+    if ! checkpoint_password_matches_hash \
+      "$checkpoint_admin_password" \
+      "${TF_VAR_checkpoint_admin_password_hash:-}"; then
+      TF_VAR_checkpoint_admin_password_hash="$(
+        generate_checkpoint_password_hash "$checkpoint_admin_password"
+      )"
+      export TF_VAR_checkpoint_admin_password_hash
+    fi
+  elif [[ "$require_checkpoint_password" != "false" ]]; then
+    die "load_deployment_environment password mode must be true or false."
+  fi
+
+  persist_deployment_secrets
 }
 
 terraform_var_args() {

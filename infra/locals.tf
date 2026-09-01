@@ -8,6 +8,10 @@ locals {
   checkpoint_plan = "mgmt-byol"
 
   checkpoint_source_requires_plan = trimspace(var.checkpoint_image_id) == "" || var.checkpoint_image_requires_plan
+  checkpoint_admin_password_bootstrap = var.checkpoint_admin_password_hash == "" ? "" : join("\n", [
+    "clish -c 'set user admin password-hash ${var.checkpoint_admin_password_hash}'",
+    "clish -c 'save config'",
+  ])
 
   gateway_frontend_ip = cidrhost(var.checkpoint_frontend_subnet_prefix, 4)
   gateway_backend_ip  = cidrhost(var.checkpoint_backend_subnet_prefix, 4)
@@ -32,7 +36,7 @@ locals {
   }
 
   management_cidrs        = distinct(var.management_cidrs)
-  primary_management_cidr = try(local.management_cidrs[0], "127.0.0.1/32")
+  primary_management_cidr = try(local.management_cidrs[0], "0.0.0.0/0")
   additional_management_cidrs = length(local.management_cidrs) > 1 ? slice(
     local.management_cidrs,
     1,
@@ -54,7 +58,7 @@ locals {
       protocol                   = "Tcp"
       source_port_ranges         = "*"
       destination_port_ranges    = service.port
-      description                = "Restricted ${service.name} access from ${local.primary_management_cidr}"
+      description                = "${service.name} management access from ${local.primary_management_cidr}"
       source_address_prefix      = local.primary_management_cidr
       destination_address_prefix = "*"
     }
@@ -70,7 +74,7 @@ locals {
         protocol                   = "Tcp"
         source_port_ranges         = "*"
         destination_port_ranges    = service.port
-        description                = "Restricted ${service.name} access from ${cidr}"
+        description                = "${service.name} management access from ${cidr}"
         source_address_prefix      = cidr
         destination_address_prefix = "*"
       }

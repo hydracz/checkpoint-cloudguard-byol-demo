@@ -7,15 +7,17 @@ managed image 或 Azure Compute Gallery image ID。管理服务器、安全网�
 许可证不写入 Terraform 配置或状态文件。模块版本、`commit`、许可证和更新方法见
 [Terraform 模块本地副本](infra/vendor/README.md)。
 
-这是一个**非生产 Demo**。它用于说明 Azure 路由、Check Point Access Control、
-HTTPS Inspection、Geo-IP 和 EU 日志留存如何配合，不提供生产可用性或性能承诺。
+这是一个**非生产 Demo**。默认只部署基础设施并配置 Gaia 路由、管理员登录和
+Log Exporter，不调用 Check Point Management API 创建对象、规则或安装策略。
+如需复现原有 Access Control、HTTPS Inspection 和 Geo-IP 自动化，显式设置
+`skip_policy_configuration = false`。
 
 ## Demo 需求
 
 | 需求 | Demo 中的检查目标 |
 | --- | --- |
-| L4/L7 流量控制 | 按五元组、Domain、URL 和 Application object 创建 Access Rule；对指定 HTTPS 流量执行解密 |
-| 跨境数据控制 | 使用 Check Point Geo Updatable Objects 按国家/地区拒绝入站和出站流量 |
+| L4/L7 流量控制 | 可选自动化模式按五元组、Domain、URL 和 Application object 创建 Access Rule；对指定 HTTPS 流量执行解密 |
+| 跨境数据控制 | 可选自动化模式使用 Check Point Geo Updatable Objects 按国家/地区拒绝入站和出站流量 |
 | 南北向和东西向覆盖 | 互联网出站、两个 Azure VNet 之间的跨区域流量都以 `10.60.1.4` 为 NVA 下一跳 |
 | 日志审计 | Check Point 日志写入 EU Log Analytics，并持续导出到 EU GRS Storage |
 | 防篡改留存 | `am-syslog` 配置 protected append Immutability Policy；客户确认后再执行不可逆锁定 |
@@ -92,12 +94,12 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
 - Terraform `>= 1.9`、Azure CLI、`jq`、OpenSSL、Python 3。
 - 目标 Azure 订阅的 Contributor 权限，以及接受 Marketplace 条款的权限。即使使用 Marketplace 派生 custom image，目标订阅仍须接受同一条款。订阅的商务市场必须允许购买 Check Point `check-point-cg-r82`/`check-point-cg-r8210` Offer；该 Offer 不向 `CN` 商务市场销售。
 - 交互部署默认复用 `az login`；CI 可选使用完整的 Service Principal（tenant/client/secret 三项缺一不可）。
-- Check Point BYOL entitlement。若订阅/试用状态不允许安装 Application Control、URL Filtering 或 HTTPS Inspection policy，基础设施仍可部署，但策略安装会明确失败。
-- 一个 OpenSSH 公钥和受限的管理公网 CIDR。
+- Check Point BYOL entitlement。只有设置 `skip_policy_configuration = false` 时才需要相应的 Application Control、URL Filtering 或 HTTPS Inspection entitlement。
+- Gaia `admin` 强密码。SSH 公钥由脚本自动生成或由用户提供；`management_cidrs` 可选，省略时允许所有 IPv4 来源。
 
 > **敏感文件**
 >
-> 不要提交 client secret、SIC key、私钥、Terraform state 或真实
+> 不要提交 client secret、Gaia `admin` 密码、SIC key、私钥、Terraform state 或真实
 > `tfvars`。VM bootstrap 参数会进入 Terraform state；生产环境应使用加密、
 > 受 RBAC 和锁保护的远程 backend。
 
@@ -147,12 +149,11 @@ company_domain      = "example.org"
 location        = "westeurope"
 remote_location = "northeurope"
 
-# 所有管理员来源统一配置；首项必须是执行首次部署的当前出口。
-management_cidrs = [
-  "203.0.113.10/32",
-  "198.51.100.20/32",
-  "192.0.2.0/24",
-]
+checkpoint_admin_password = "<STRONG_GAIA_ADMIN_PASSWORD>"
+skip_policy_configuration = true
+
+# 可选；省略时默认允许 0.0.0.0/0。需要限源时再填写：
+# management_cidrs = ["203.0.113.10/32", "192.0.2.0/24"]
 
 checkpoint_vm_size = "Standard_D8s_v5"
 workload_vm_size   = "Standard_D4ls_v6"
@@ -164,7 +165,9 @@ collector_vm_size  = "Standard_D4ls_v6"
 | 参数名 | 是否必填 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `subscription_id` | 是 | string | 无 | Azure CLI 和 Terraform 明确操作的客户订阅 |
-| `management_cidrs` | 是 | list(string) | 无 | 统一允许 SSH、Gaia Portal 和 SmartConsole 的管理员公网 `/32` 或 CIDR；首项是部署执行器 |
+| `checkpoint_admin_password` | 是（部署脚本） | string | `""` | 内置 Gaia `admin` 的 Console 和 CLI/Portal 密码；脚本本地生成 SHA-512 salted hash，SSH 仍只使用公钥 |
+| `skip_policy_configuration` | 否 | bool | `true` | 不调用 Management API 创建对象/规则或安装策略；Gaia 路由、管理来源和 Log Exporter 仍会配置 |
+| `management_cidrs` | 否 | list(string) | `["0.0.0.0/0"]` | 允许 SSH、Gaia Portal 和 SmartConsole 的来源；需要限源时首项填写部署执行器 |
 | `company_domain` | 否 | string | `example.org` | 演示 HTTPS Inspection CA 的 `issued-by`；可填写客户批准的公司域名 |
 | `location` | 否 | string | `westeurope` | Hub、Check Point、主工作负载和日志资源所在区域 |
 | `remote_location` | 否 | string | `northeurope` | 远端工作负载所在区域，必须与 `location` 不同 |
@@ -175,10 +178,23 @@ collector_vm_size  = "Standard_D4ls_v6"
 | `workload_vm_size` | 否 | string | `Standard_D4ls_v6` | 两台工作负载 VM 的规格 |
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
 | `blocked_countries` | 否 | list(string) | `["China"]` | Check Point Repository 中的英文国家名 |
-| `enable_tls_inspection` | 否 | bool | `true` | 是否验证 HTTPS Inspection；R81 未完成 SmartConsole bootstrap 时必须为 `false` |
+| `enable_tls_inspection` | 否 | bool | `true` | 仅在 `skip_policy_configuration=false` 时使用；R81 未完成 SmartConsole bootstrap 时必须为 `false` |
 | `r81_tls_manually_configured` | 否 | bool | `false` | R81 CA、Gateway setting、layer/rule 是否已通过 SmartConsole 配置 |
 
-不同客户只需修改 `tfvars` 中的订阅、网络、命名和策略参数，不需要修改 Terraform 源码。
+不同客户只需修改 `tfvars` 中的订阅、`admin` 密码、网络、命名和可选策略参数，不需要修改 Terraform 源码。
+
+### 迁移旧版 tfvars
+
+脚本会创建新文件且拒绝覆盖源文件或已有目标。它把旧的 `management_cidr` 和
+`ssh_source_cidrs` 合并、去重为 `management_cidrs`，并补充当前版本新增的密码和
+策略跳过参数：
+
+```bash
+./scripts/migrate-tfvars.sh configs/old-demo.tfvars configs/demo.tfvars
+```
+
+省略第二个参数时输出为 `configs/old-demo.latest.tfvars`。迁移后先把
+`checkpoint_admin_password = "REPLACE_ME"` 改成实际密码，再执行部署。
 
 ### 使用自定义 Check Point 镜像
 
@@ -246,6 +262,7 @@ ssh-keygen -lf .local/checkpoint-demo-ssh.pub
 
 - 私钥：`.local/checkpoint-demo-ssh`，权限 `0600`
 - 公钥：`.local/checkpoint-demo-ssh.pub`
+- Gaia `admin` 密码的 SHA-512 salted hash：`.local/deployment-secrets.env`，权限 `0600`
 
 `.local/` 和这两个具体路径均在 `.gitignore` 中；私钥不会写入 Terraform state，也不能
 提交。自动化默认使用该密钥。只有需要外部密钥时才同时设置
@@ -296,31 +313,35 @@ export ARM_CLIENT_SECRET="<CLIENT_SECRET>"
 
 脚本先执行预检；默认 Marketplace 或有 Plan custom image 会接受 `mgmt-byol`
 条款，无 Plan custom image 不发出 terms/Plan 请求。之后脚本应用基础设施
-Terraform plan。Check Point Management API 可用后，脚本写入策略和 Log Exporter，
-并把演示 Outbound CA 公钥安装到两台工作负载 VM。
+Terraform plan。默认 `skip_policy_configuration=true` 时，脚本只配置 Gaia 静态路由、
+GUI Clients 和 Log Exporter，不执行任何 `mgmt_cli` 命令。设置为 `false` 后才恢复原有
+策略、对象、Policy Install 和 Outbound CA 自动化。
 
 日志导出分为两个 Terraform 阶段。脚本先向日志收集 VM 写入一条 bootstrap
 syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Export。
-这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 只写入权限为 `0600` 的 `.local/deployment-secrets.env`；部署 SSH 私钥只
-写入 `.local/checkpoint-demo-ssh`。
+这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 和 Gaia
+`admin` 密码 hash 只写入权限为 `0600` 的 `.local/deployment-secrets.env`；明文密码
+保留在 gitignored tfvars，部署 SSH 私钥只写入 `.local/checkpoint-demo-ssh`。
 
-策略配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过受限 Gaia SSH 等待
-Management API 和 Log Exporter 命令最多 30 分钟，避免首次启动尚在安装组件时过早
-执行策略或回退到不稳定的 Run Command；超时后才回退。
+Gateway 配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过 Gaia SSH 等待
+所需命令最多 30 分钟；默认模式只等待 Gaia CLI 和 Log Exporter，启用策略自动化后才
+探测 Management API。超时后回退到 Azure VM Run Command。
 可用 `CHECKPOINT_SSH_WAIT_SECONDS` 调整等待时间，也可显式设置
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
 若测试订阅自动删除 Terraform 创建的 SSH NSG rules，可在确认符合 Azure Policy 后
 显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只按 Terraform output 中的
-`management_cidrs` 恢复 TCP/22 临时 rules，不会创建开放来源，并在操作结束时删除它
-临时创建的 rules。普通客户环境已有稳定的入站白名单，不应设置该开关。
+`management_cidrs` 恢复 TCP/22 临时 rules，并在操作结束时删除它临时创建的 rules。
+如果省略 `management_cidrs`，恢复的来源同样是 `0.0.0.0/0`。普通客户环境已有稳定的
+入站规则时不应设置该开关。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
 
-若 BYOL 必须先在 Gaia/SmartConsole 中激活：
+若 BYOL 必须先在 Gaia/SmartConsole 中激活，可用运行时参数强制跳过策略；这仍会配置
+路由、管理员来源和 Log Exporter：
 
 ```bash
 ./scripts/deploy.sh --var-file configs/demo.tfvars --skip-policy
-# 完成客户许可证激活后：
+# 完成客户许可证激活，并在 tfvars 设置 skip_policy_configuration=false 后：
 ./scripts/configure-policy.sh
 ```
 
@@ -347,13 +368,14 @@ terraform -chdir=infra output
 
 - `subscription_id` 是客户目标订阅。
 - `checkpoint_backend_private_ip` 是两个工作负载的 NVA 下一跳。
-- `checkpoint_management_url`、SSH 和 SmartConsole 仅能从 `management_cidrs` 访问。
+- `checkpoint_management_url`、SSH 和 SmartConsole 从 `management_cidrs` 访问；省略该参数时允许所有 IPv4 来源。
 - Log Analytics 和 Storage 位于主 EU region。
 
-### 2. 设置并登录 Gaia Portal
+### 2. 登录 Gaia Portal 和 CLI
 
-本仓库使用 SSH Public Key 部署，不会生成默认 Web 密码。Gaia Portal 用户名是
-`admin`；Azure metadata 中的 `notused` 只是占位用户。先使用仓库私钥登录：
+部署脚本把 tfvars 的 `checkpoint_admin_password` 转换为 SHA-512 salted hash，并在
+首次启动时同时配置内置 `admin` 的序列控制台与 Gaia CLI/Portal 密码。Azure metadata
+中的 `notused` 只是占位用户。SSH 认证仍保持公钥模式：
 
 ```bash
 TF="${TERRAFORM:-terraform}"
@@ -361,26 +383,40 @@ IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
 ssh -i .local/checkpoint-demo-ssh "admin@$IP"
 ```
 
-在 Gaia shell 中交互设置密码，避免密码进入命令历史、环境变量或 Terraform state：
-
-```text
-clish
-set user admin password
-save config
-exit
-```
-
-按提示输入并确认符合客户密码策略的新密码，然后打开：
-
 ```bash
 "$TF" -chdir=infra output -raw checkpoint_management_url
 ```
 
-使用 `admin` 和新密码登录。当前公网来源必须在 `management_cidrs` 中，且
-`AllowRestrictedGaiaPortal` 对应的 TCP/443 NSG rule 必须存在。重新创建 Gateway 后需
-重新设置密码。
+使用 `admin` 和 tfvars 中的密码登录。TCP/443 NSG rule 的来源由
+`management_cidrs` 决定；省略时为 `0.0.0.0/0`。修改密码后重新运行
+`plan.sh`/`deploy.sh` 会生成新 hash，并重建需要更新首次启动数据的 Gateway。
+
+#### Web Portal 端到端验证
+
+从旧参数文件创建新文件，填写密码后部署：
+
+```bash
+./scripts/migrate-tfvars.sh configs/old-demo.tfvars configs/portal-e2e.tfvars
+# 编辑 configs/portal-e2e.tfvars，替换 REPLACE_ME。
+./scripts/deploy.sh --var-file configs/portal-e2e.tfvars
+```
+
+先确认 HTTPS 服务可达，再用浏览器完成登录：
+
+```bash
+URL="$("${TERRAFORM:-terraform}" -chdir=infra output -raw checkpoint_management_url)"
+curl --insecure --head --connect-timeout 15 "$URL"
+printf '%s\n' "$URL"
+```
+
+浏览器忽略测试环境自签名证书告警后，使用用户名 `admin` 和 tfvars 中的
+`checkpoint_admin_password`。能进入 Gaia Portal 且不再返回登录页即为通过。
+如需保留环境供后续人工验证，完成后不要运行 `scripts/destroy.sh`；保留期间 Azure
+资源会继续计费。
 
 ### 3. 检查数据路径
+
+以下自动策略/流量矩阵只适用于 `skip_policy_configuration=false`。默认模式无需执行。
 
 ```bash
 ./scripts/run-tests.sh
@@ -445,9 +481,9 @@ AzureRM 会在 Resource Group 仍存在时永久删除 Log Analytics workspace�
 | `D8s_v6` 无法部署 Check Point | Dv6 仅支持 Gen2，当前 `standalone` `mgmt-byol` 镜像为 Gen1；使用 `D8s_v5`、`F16s` 或经 Check Point 支持矩阵确认的其他 Gen1 规格。 |
 | SSH 用户 `notused` 失败 | Gaia 登录用户是 `admin`；`notused` 只是 Azure metadata 兼容占位。 |
 | 重建 VM 后 SSH host key changed | 删除项目专用缓存：`ssh-keygen -R <GATEWAY_PUBLIC_IP> -f .local/known_hosts`，核对 Azure Public IP 后重试。 |
-| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先使用 `.local/checkpoint-demo-ssh`；确保当前出口 `/32` 位于 `management_cidrs` 且排在首项。 |
+| Azure Run Command 长时间 Updating | 默认 `CHECKPOINT_TRANSPORT=auto` 会优先使用 `.local/checkpoint-demo-ssh`；若配置了限源，确保当前出口位于 `management_cidrs` 且排在首项。 |
 | Policy install 报只有一块 interface | Gateway object 必须同时定义 `eth0` External 和 `eth1` Internal。 |
-| Updatable Objects repository 未初始化 | 当前脚本会自动执行初始化；首次需要 Check Point 能访问更新服务。 |
+| Updatable Objects repository 未初始化 | 仅影响 `skip_policy_configuration=false`；该模式会自动初始化，首次需要 Check Point 能访问更新服务。 |
 | Storage data-plane 403/404 | 审计 Storage/container/WORM 已改为 ARM management-plane template，不要求公网 data-plane。 |
 
 ## 官方参考资料

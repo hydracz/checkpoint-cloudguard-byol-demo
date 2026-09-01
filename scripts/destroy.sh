@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-load_deployment_environment "$VAR_FILE"
+load_deployment_environment "$VAR_FILE" false
 RG="$(terraform_output_raw resource_group_name)"
 [[ "${CONFIRM_DESTROY:-}" == "$RG" ]] ||
   die "Set CONFIRM_DESTROY=$RG to confirm destruction."

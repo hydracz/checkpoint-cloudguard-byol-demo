@@ -6,13 +6,16 @@ company_domain      = "example.org"
 location        = "westeurope"
 remote_location = "northeurope"
 
-# Administrator sources for SSH, Gaia Portal, and SmartConsole. Put the
-# deployment operator first. Use /32 for one public IP or an approved CIDR.
-management_cidrs = [
-  "203.0.113.10/32",
-  # "198.51.100.20/32",
-  # "192.0.2.0/24",
-]
+# Required. Used for the built-in Gaia admin account in the serial console and
+# Gaia CLI/Portal. SSH continues to use the generated or supplied public key.
+checkpoint_admin_password = "REPLACE_ME"
+
+# Optional. Omit management_cidrs to allow all IPv4 administrator sources.
+# For restricted access, put the deployment operator first.
+# management_cidrs = [
+#   "203.0.113.10/32",
+#   "198.51.100.20/32",
+# ]
 
 checkpoint_os_version = "R82"
 # Optional: use a generalized managed image or Compute Gallery image instead
@@ -38,6 +41,10 @@ blocked_countries    = ["China"]
 blocked_applications = ["P2P File Sharing"]
 blocked_urls         = ["example.com", "httpbin.org/anything/blocked"]
 
+# Default: do not call the Check Point Management API to add objects, rules, or
+# install policy. Gaia routing, management access, and Log Exporter still run.
+skip_policy_configuration = true
+# Used only when skip_policy_configuration = false.
 enable_tls_inspection = true
 
 # Disabled by default to avoid exposing a service. When enabled, use a

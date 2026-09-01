@@ -110,7 +110,8 @@ UDR、Gaia 静态路由和 Anti-Spoofing 配置。
 | 510 | `10.62.0.0/16` | `Any` | 远端 Spoke 转发流量 |
 | 520（条件化） | `inbound_demo_source_cidr` | TCP/18080 | 可选 DNAT 演示 |
 
-管理员 CIDR 列表和可选 DNAT 来源均拒绝 `0.0.0.0/0`。
+`management_cidrs` 省略时默认为 `0.0.0.0/0`；生产或共享演示环境建议显式限源。
+可选 DNAT 来源仍拒绝 `0.0.0.0/0`。
 
 ### Workload NSG
 

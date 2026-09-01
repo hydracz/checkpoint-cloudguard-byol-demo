@@ -90,6 +90,7 @@ subscription_id     = "<SUBSCRIPTION_ID>"
 resource_group_name = "rg-checkpoint-r81-e2e"
 prefix              = "cpr81"
 company_domain      = "example.org"
+checkpoint_admin_password = "<STRONG_GAIA_ADMIN_PASSWORD>"
 
 # 所有管理员来源统一写在一个列表；当前部署出口必须放在首项。
 management_cidrs = [
@@ -111,14 +112,16 @@ collector_vm_size = "Standard_D4ls_v6"
 
 # R81 GA/API 1.7 cannot bootstrap HTTPS Inspection headlessly.
 enable_tls_inspection = false
+skip_policy_configuration = false
 
 # 完整验证 T13 时使用当前严格限源 /32；不测试入站 DNAT 时保持 false/空字符串。
 enable_inbound_demo      = true
 inbound_demo_source_cidr = "<CURRENT_PUBLIC_IPV4>/32"
 ```
 
-`management_cidrs` 是唯一管理员来源清单。Terraform 拒绝 `0.0.0.0/0`，接受 1-50 个
-CIDR，并为每个不同来源创建 SSH、Gaia Portal 和 SmartConsole NSG rules。上游模块
+本 E2E 显式填写 `management_cidrs` 以限制管理员来源；当前默认值是
+`["0.0.0.0/0"]`。Terraform 接受 1-50 个 CIDR，并为每个不同来源创建 SSH、Gaia
+Portal 和 SmartConsole NSG rules。上游模块
 首次启动只能接收一个 network，因此首项用于 bootstrap；策略配置随后用
 `cp_conf client createlist` 同步完整 GUI Clients，并把同一列表写入
 `CloudGuard-SSH-Sources`，避免 Azure 与 Gateway 管理来源不一致。
@@ -204,25 +207,17 @@ exit
 预期 guest 为 R81、Access Policy 已安装、`azure-monitor` Log Exporter 为 `Running`。
 Azure VM metadata 中的 `notused` 不是登录用户，必须使用 `admin`。
 
-该 SSH Public Key 部署没有默认 Gaia Portal 密码。使用上面的仓库私钥登录后，在 Gaia
-shell 中交互设置 `admin` Web 密码：
-
-```text
-clish
-set user admin password
-save config
-exit
-```
-
-按提示输入并确认符合客户密码策略的新密码。然后取得 Portal URL：
+部署脚本已用 `checkpoint_admin_password` 配置 `admin` 的 Console 和 Gaia
+CLI/Portal 密码；SSH 继续使用仓库私钥。取得 Portal URL：
 
 ```bash
 "$TF" -chdir=infra output -raw checkpoint_management_url
 ```
 
-从 `management_cidrs` 中的来源打开该 HTTPS URL，使用用户名 `admin` 和新密码登录。
-TCP/443 对应 `AllowRestrictedGaiaPortal` NSG rule；密码不会写入 tfvars、环境变量或
-Terraform state。重新创建 Gateway 后需要重新设置。
+从 `management_cidrs` 中的来源打开该 HTTPS URL，使用用户名 `admin` 和 tfvars
+密码登录。TCP/443 对应 `AllowRestrictedGaiaPortal` NSG rule；明文密码位于
+gitignored tfvars，salted hash 位于 `.local/deployment-secrets.env` 和 Terraform
+首次启动数据。
 
 如果仅测试订阅的组织策略已删除 SSH rule，可在同一 shell 临时恢复、登录并清理：
 

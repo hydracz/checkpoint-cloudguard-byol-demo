@@ -14,6 +14,7 @@ required=(
   configs/demo.tfvars.example
   cloud-init/workload.yaml cloud-init/collector.yaml
   scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh
+  scripts/migrate-tfvars.sh
   scripts/publish-vhd-image.sh
   scripts/verify-vendor.sh
   scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh

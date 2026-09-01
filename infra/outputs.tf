@@ -68,6 +68,11 @@ output "checkpoint_management_url" {
   description = "Gaia Portal URL."
 }
 
+output "checkpoint_admin_username" {
+  value       = "admin"
+  description = "Built-in Gaia account configured for console and CLI/Portal password login; SSH remains public-key-only."
+}
+
 output "checkpoint_frontend_private_ip" {
   value       = module.checkpoint.frontend_private_ip_address
   description = "Gateway external NIC private IP."
@@ -134,9 +139,14 @@ output "policy_package_name" {
   value = var.policy_package_name
 }
 
+output "skip_policy_configuration" {
+  value       = var.skip_policy_configuration
+  description = "Whether Check Point Management API policy/object/rule automation is disabled."
+}
+
 output "management_cidrs" {
   value       = local.management_cidrs
-  description = "Administrator CIDRs admitted to SSH, Gaia Portal, and SmartConsole by Azure and Check Point controls."
+  description = "Administrator CIDRs admitted to SSH, Gaia Portal, and SmartConsole; defaults to all IPv4 sources."
 }
 
 output "company_domain" {

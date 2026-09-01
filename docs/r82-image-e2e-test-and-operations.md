@@ -107,6 +107,7 @@ subscription_id     = "<SUBSCRIPTION_ID>"
 resource_group_name = "rg-checkpoint-r82-e2e"
 prefix              = "cpr82"
 company_domain      = "example.org"
+checkpoint_admin_password = "<STRONG_GAIA_ADMIN_PASSWORD>"
 
 management_cidrs = [
   "<PRIMARY_PUBLIC_IPV4>/32",
@@ -125,6 +126,7 @@ workload_vm_size  = "Standard_D4ls_v6"
 collector_vm_size = "Standard_D4ls_v6"
 
 enable_tls_inspection = true
+skip_policy_configuration = false
 ```
 
 部署：
@@ -143,12 +145,14 @@ export CHECKPOINT_RECONCILE_SSH_RULE=true
 ./scripts/deploy.sh --var-file "<R82_TFVARS>"
 ```
 
-`management_cidrs` 是唯一管理员来源清单。单个公网 IP 必须使用 `/32`，办公室或 VPN
-出口可写批准的 CIDR；执行首次部署的当前出口放在首项。Terraform 为每个来源创建
+本 E2E 显式填写 `management_cidrs` 以限制管理员来源；省略时默认为
+`["0.0.0.0/0"]`。单个公网 IP 使用 `/32`，办公室或 VPN 出口可写批准的 CIDR；
+执行首次部署的当前出口放在首项。Terraform 为每个来源创建
 SSH、Gaia Portal 和 SmartConsole NSG rules，策略脚本把同一列表写入 GUI Clients 和
 `CloudGuard-SSH-Sources`。普通客户环境不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
 
-SSH Public Key 模式不会生成默认 Gaia Portal 密码。R82 与 R81 使用相同步骤：
+部署脚本使用 `checkpoint_admin_password` 自动配置 Console 和 Gaia CLI/Portal；
+SSH Public Key 登录保持不变：
 
 ```bash
 TF="${TERRAFORM:-terraform}"
@@ -156,18 +160,9 @@ IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
 ssh -i .local/checkpoint-demo-ssh "admin@$IP"
 ```
 
-在 Gaia shell 中交互设置：
-
-```text
-clish
-set user admin password
-save config
-exit
-```
-
-然后从 `management_cidrs` 中的来源打开
+从 `management_cidrs` 中的来源打开
 `terraform -chdir=infra output -raw checkpoint_management_url`，使用用户名 `admin`
-和新密码登录。`notused` 是 Azure metadata 占位用户；密码不会进入 Terraform state。
+和 tfvars 中的密码登录。`notused` 是 Azure metadata 占位用户。
 
 部署脚本接受 `checkpoint:check-point-cg-r82:mgmt-byol` terms，并把相同 Plan 写入 VM。
 Preflight 同时检查 definition Plan、Linux/Generalized/x64/Gen1、目标 region 副本和

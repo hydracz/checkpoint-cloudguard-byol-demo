@@ -69,7 +69,9 @@ fi
 "$TERRAFORM" -chdir="$INFRA" apply -input=false -auto-approve -parallelism="$TF_PARALLELISM" "$LOCAL_DIR/plan.tfplan"
 "$TERRAFORM" -chdir="$INFRA" output -json >"$LOCAL_DIR/latest-deployment-outputs.json"
 
-if ! $SKIP_POLICY; then
+if $SKIP_POLICY; then
+  CHECKPOINT_SKIP_POLICY_CONFIGURATION=true "$ROOT/scripts/configure-policy.sh"
+else
   "$ROOT/scripts/configure-policy.sh"
 fi
 

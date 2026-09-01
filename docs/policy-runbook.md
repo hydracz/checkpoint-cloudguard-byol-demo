@@ -1,5 +1,15 @@
 # Check Point 策略、许可证与日志配置
 
+## 默认行为
+
+`skip_policy_configuration=true` 为默认值。`configure-policy.sh` 在该模式下不会执行
+`mgmt_cli`，只配置 Gaia 静态路由、GUI Clients 和 `azure-monitor` Log Exporter。
+如需使用本文的规则、对象、TLS CA 和 Policy Install 自动化，先在 tfvars 中设置：
+
+```hcl
+skip_policy_configuration = false
+```
+
 ## BYOL 激活
 
 Terraform 默认部署 Marketplace `mgmt-byol` 镜像，也可显式选择 R82/R82.10 有 Plan
@@ -8,9 +18,9 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 
 若首次策略安装提示 blade 未授权：
 
-1. 若 Gaia Portal 尚无密码，先通过 `.local/checkpoint-demo-ssh` 登录 `admin`，在
-   Clish 中执行 `set user admin password` 和 `save config`。
-2. 从 `management_cidrs` 中任一批准来源登录 Terraform output 中的 Gaia Portal 或 SmartConsole 地址。
+1. 使用 tfvars 中的 `checkpoint_admin_password` 登录 `admin`；部署脚本已配置
+   Console 和 Gaia CLI/Portal 密码，SSH 仍使用 `.local/checkpoint-demo-ssh`。
+2. 从 `management_cidrs` 中的来源登录 Terraform output 中的 Gaia Portal 或 SmartConsole 地址；省略该参数时允许所有 IPv4 来源。
 3. 按 Check Point User Center/SmartUpdate 流程激活客户 BYOL。
 4. 确认 Firewall、Application Control、URL Filtering 和 HTTPS Inspection entitlement。
 5. 重新运行 `./scripts/configure-policy.sh`。
@@ -36,9 +46,9 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 出站 Hide NAT。不依赖 R82 才支持的 `nat-hide-internal-interfaces` Management API
 参数，因此 R81/R82 使用相同策略路径；T16 检查远端 Web journal 中的真实来源地址。
 
-`management_cidrs` 是所有管理员操作的唯一来源清单。Terraform 为每个 CIDR 创建
+`management_cidrs` 是所有管理员操作的来源清单，省略时默认为 `0.0.0.0/0`。Terraform 为每个 CIDR 创建
 SSH、Gaia Portal 和 SmartConsole NSG rules；策略脚本用 `cp_conf client createlist`
-同步完整 GUI Clients，并为每个 CIDR 创建 network object 放入
+同步完整 GUI Clients；仅在 `skip_policy_configuration=false` 时为每个 CIDR 创建 network object 放入
 `CloudGuard-SSH-Sources` group。SSH rule 的目标只包含 Gateway object，其他公网来源
 不能访问管理服务。
 
@@ -69,7 +79,7 @@ Gateway 执行 `install-policy`。
 
 ## TLS Inspection
 
-`enable_tls_inspection=true` 时：
+`skip_policy_configuration=false` 且 `enable_tls_inspection=true` 时：
 
 - Management API 生成 `CloudGuardDemoOutboundCA`，私钥留在 Management。
 - `issued-by` 使用 `company_domain`；未设置时为 IANA 保留域名 `example.org`。
@@ -123,7 +133,7 @@ bypass、QUIC/HTTP3 策略、证书固定应用测试和终端信任分发。
 
 ## Log Exporter
 
-脚本配置：
+无论是否启用策略自动化，脚本都配置：
 
 ```text
 name=azure-monitor
@@ -145,15 +155,16 @@ Export Rule。
 
 ## 重复执行与恢复
 
-- `CHECKPOINT_TRANSPORT=auto` 默认通过 Gaia SSH 等待 Management API 和 Log
-  Exporter 命令最多 30 分钟，再回退到 Azure Run Command；可用
+- `CHECKPOINT_TRANSPORT=auto` 默认通过 Gaia SSH 等待所需命令最多 30 分钟，再回退到
+  Azure Run Command；跳过策略时不探测 Management API。可用
   `CHECKPOINT_SSH_WAIT_SECONDS` 和 `CHECKPOINT_SSH_RETRY_SECONDS` 调整。
 - 若测试订阅自动删除 Terraform-managed SSH rules，在确认允许恢复后设置
   `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本按 `management_cidrs` output 临时恢复每个
   TCP/22 rule，并在操作结束时删除它临时创建的 rules；默认 `false`，不会自动对抗
-  组织 Policy。普通客户环境应让 Terraform rules 持续存在。
-- `configure-policy.sh` 可重复执行；只重建 `CloudGuard Demo - ` 规则和
-  NAT 规则以及 `CloudGuard-*` 演示对象。
+  组织 Policy。省略 `management_cidrs` 时来源为 `0.0.0.0/0`。
+- `configure-policy.sh` 可重复执行；默认只协调 Gaia/Log Exporter。设置
+  `skip_policy_configuration=false` 后才重建 `CloudGuard Demo - ` 规则、NAT 规则和
+  `CloudGuard-*` 演示对象。
 - 修改 Geo/Application/URL 清单后重新 `plan/apply`，再运行 `configure-policy.sh`。
 - WORM lock 不可回滚。锁定后，Storage 在保留期结束前会阻止相关资源删除。
 - `lock-worm.sh` 检测到 `Locked` 时直接返回。锁定后不要修改 ARM template 中的

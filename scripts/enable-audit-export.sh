@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-load_deployment_environment "$VAR_FILE"
+load_deployment_environment "$VAR_FILE" false
 require_cmd az
 
 SUBSCRIPTION="$(terraform_output_raw subscription_id)"

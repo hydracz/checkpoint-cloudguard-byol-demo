@@ -21,7 +21,7 @@ module "checkpoint" {
   authentication_type            = "SSH Public Key"
   admin_SSH_key                  = var.admin_ssh_public_key
   sic_key                        = var.sic_key
-  serial_console_password_hash   = ""
+  serial_console_password_hash   = var.checkpoint_admin_password_hash
   maintenance_mode_password_hash = ""
   installation_type              = "standalone"
   vm_size                        = var.checkpoint_vm_size
@@ -31,7 +31,7 @@ module "checkpoint" {
   vm_os_offer                    = local.checkpoint_offer
   allow_upload_download          = true
   admin_shell                    = "/bin/bash"
-  bootstrap_script               = ""
+  bootstrap_script               = local.checkpoint_admin_password_bootstrap
   enable_custom_metrics          = true
   zone                           = ""
   smart_1_cloud_token            = ""

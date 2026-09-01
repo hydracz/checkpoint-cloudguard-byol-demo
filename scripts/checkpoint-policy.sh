@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 19 ]]; then
-  echo "Expected 19 arguments; received $#." >&2
+if [[ $# -ne 20 ]]; then
+  echo "Expected 20 arguments; received $#." >&2
   exit 2
 fi
 
@@ -25,6 +25,7 @@ MANAGEMENT_CIDRS_B64="${16}"
 COMPANY_DOMAIN="${17}"
 CHECKPOINT_RELEASE="${18}"
 R81_TLS_MANUAL="${19}"
+SKIP_POLICY_CONFIGURATION="${20}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
@@ -76,21 +77,125 @@ decode_json() {
   printf '%s' "$1" | base64 -d
 }
 
-require_command openssl
 require_command base64
 require_command clish
 require_command cp_conf
 require_command python3
-require_command timeout
-wait_for_command mgmt_cli
 wait_for_command jq
 wait_for_command cp_log_export
+
+[[ "$SKIP_POLICY_CONFIGURATION" == "true" || "$SKIP_POLICY_CONFIGURATION" == "false" ]] || {
+  echo "skip_policy_configuration must be true or false." >&2
+  exit 2
+}
+
+MANAGEMENT_CIDRS_JSON="$(decode_json "$MANAGEMENT_CIDRS_B64")"
+MANAGEMENT_CIDR="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[0]')"
+SYNC_GUI_CLIENTS=true
+if jq -e 'length == 1 and .[0] == "0.0.0.0/0"' <<<"$MANAGEMENT_CIDRS_JSON" >/dev/null; then
+  SYNC_GUI_CLIENTS=false
+fi
+
+BACKEND_AZURE_GATEWAY="${BACKEND_IP%.*}.1"
+COLLECTOR_CIDR="${COLLECTOR_IP%.*}.0/24"
+
+GUI_CLIENTS=()
+while IFS= read -r cidr; do
+  gui_client="$(
+    python3 - "$cidr" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.ip_network(sys.argv[1], strict=False)
+print(f"{network.network_address}/{network.netmask}")
+PY
+  )"
+  GUI_CLIENTS+=("$gui_client")
+done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
+(( ${#GUI_CLIENTS[@]} > 0 )) || {
+  echo "At least one management CIDR is required." >&2
+  exit 1
+}
+
+configure_gaia_baseline() {
+  local internal_cidr
+  for internal_cidr in "$EU_CIDR" "$REMOTE_CIDR" "$COLLECTOR_CIDR"; do
+    clish -c "set static-route $internal_cidr nexthop gateway address $BACKEND_AZURE_GATEWAY on" ||
+      return 1
+  done
+  clish -c "save config" || return 1
+  if $SYNC_GUI_CLIENTS; then
+    cp_conf client createlist "${GUI_CLIENTS[@]}" >/dev/null || return 1
+  fi
+}
+
+baseline_ready=false
+for attempt in $(seq 1 60); do
+  if configure_gaia_baseline; then
+    baseline_ready=true
+    break
+  fi
+  sleep 30
+done
+$baseline_ready || {
+  echo "Gaia routing and management-client configuration did not become ready within 30 minutes." >&2
+  exit 1
+}
+
+configure_log_exporter() {
+  if cp_log_export show name azure-monitor >/dev/null 2>&1; then
+    cp_log_export set \
+      name azure-monitor \
+      target-server "$COLLECTOR_IP" \
+      target-port 514 \
+      protocol udp \
+      format generic \
+      read-mode semi-unified \
+      --apply-now \
+      >/dev/null
+  else
+    cp_log_export add \
+      name azure-monitor \
+      target-server "$COLLECTOR_IP" \
+      target-port 514 \
+      protocol udp \
+      format generic \
+      read-mode semi-unified \
+      --apply-now \
+      >/dev/null
+  fi
+}
+
+configure_log_exporter_with_retry() {
+  local configured=false
+  for attempt in $(seq 1 60); do
+    if configure_log_exporter; then
+      configured=true
+      break
+    fi
+    sleep 30
+  done
+  $configured || {
+    echo "Log Exporter configuration did not become ready within 30 minutes." >&2
+    return 1
+  }
+}
+
+if [[ "$SKIP_POLICY_CONFIGURATION" == "true" ]]; then
+  configure_log_exporter_with_retry
+  log "Skipped Management API policy automation and configured Log Exporter target $COLLECTOR_IP."
+  printf 'DEMO_POLICY_STATUS=skipped\n'
+  printf 'DEMO_CONFIGURATION_STATUS=complete\n'
+  exit 0
+fi
+
+require_command openssl
+require_command timeout
+wait_for_command mgmt_cli
 
 COUNTRIES_JSON="$(decode_json "$COUNTRIES_B64")"
 APPLICATIONS_JSON="$(decode_json "$APPLICATIONS_B64")"
 URLS_JSON="$(decode_json "$URLS_B64")"
-MANAGEMENT_CIDRS_JSON="$(decode_json "$MANAGEMENT_CIDRS_B64")"
-MANAGEMENT_CIDR="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[0]')"
 
 log "Waiting for the standalone Management API..."
 ready=false
@@ -112,32 +217,6 @@ if ! timeout 60 mgmt_cli -r true show updatable-objects-repository-content \
   timeout 300 mgmt_cli -r true update-updatable-objects-repository-content \
     --format json >/dev/null
 fi
-
-BACKEND_AZURE_GATEWAY="${BACKEND_IP%.*}.1"
-COLLECTOR_CIDR="${COLLECTOR_IP%.*}.0/24"
-for internal_cidr in "$EU_CIDR" "$REMOTE_CIDR" "$COLLECTOR_CIDR"; do
-  clish -c "set static-route $internal_cidr nexthop gateway address $BACKEND_AZURE_GATEWAY on"
-done
-clish -c "save config"
-
-GUI_CLIENTS=()
-while IFS= read -r cidr; do
-  gui_client="$(
-    python3 - "$cidr" <<'PY'
-import ipaddress
-import sys
-
-network = ipaddress.ip_network(sys.argv[1], strict=False)
-print(f"{network.network_address}/{network.netmask}")
-PY
-  )"
-  GUI_CLIENTS+=("$gui_client")
-done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
-(( ${#GUI_CLIENTS[@]} > 0 )) || {
-  echo "At least one management CIDR is required." >&2
-  exit 1
-}
-cp_conf client createlist "${GUI_CLIENTS[@]}" >/dev/null
 
 SESSION_FILE="$(mktemp)"
 PUBLISHED=false
@@ -616,30 +695,11 @@ if [[ $install_status -ne 0 ]]; then
   exit "$install_status"
 fi
 
-if cp_log_export show name azure-monitor >/dev/null 2>&1; then
-  cp_log_export set \
-    name azure-monitor \
-    target-server "$COLLECTOR_IP" \
-    target-port 514 \
-    protocol udp \
-    format generic \
-    read-mode semi-unified \
-    --apply-now \
-    >/dev/null
-else
-  cp_log_export add \
-    name azure-monitor \
-    target-server "$COLLECTOR_IP" \
-    target-port 514 \
-    protocol udp \
-    format generic \
-    read-mode semi-unified \
-    --apply-now \
-    >/dev/null
-fi
+configure_log_exporter_with_retry
 
 log "Configured policy for public IP $PUBLIC_IP and Log Exporter target $COLLECTOR_IP."
 if [[ -n "$CA_PUBLIC_B64" ]]; then
   printf 'DEMO_TLS_CA_B64=%s\n' "$CA_PUBLIC_B64"
 fi
 printf 'DEMO_POLICY_STATUS=complete\n'
+printf 'DEMO_CONFIGURATION_STATUS=complete\n'

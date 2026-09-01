@@ -37,15 +37,24 @@ EU_HOST_IP="$(output_value eu_workload_private_ip)"
 PUBLIC_IP="$(output_value checkpoint_public_ip)"
 TLS_ENABLED="$(output_value enable_tls_inspection)"
 R81_TLS_MANUAL="$(printf '%s' "$outputs" | jq -r '.r81_tls_manually_configured.value // false')"
+SKIP_POLICY_CONFIGURATION="$(
+  printf '%s' "$outputs" | jq -r '.skip_policy_configuration.value // true'
+)"
+SKIP_POLICY_CONFIGURATION="${CHECKPOINT_SKIP_POLICY_CONFIGURATION:-$SKIP_POLICY_CONFIGURATION}"
 INBOUND_ENABLED="$(output_value enable_inbound_demo)"
 INBOUND_SOURCE_CIDR="$(output_value inbound_demo_source_cidr)"
 INBOUND_SOURCE_CIDR="${INBOUND_SOURCE_CIDR:-disabled}"
 COUNTRIES_B64="$(printf '%s' "$outputs" | jq -c '.blocked_countries.value' | openssl base64 -A)"
 APPLICATIONS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_applications.value' | openssl base64 -A)"
 URLS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_urls.value' | openssl base64 -A)"
+[[ "$SKIP_POLICY_CONFIGURATION" == "true" || "$SKIP_POLICY_CONFIGURATION" == "false" ]] ||
+  die "skip_policy_configuration must be true or false."
 
 mkdir -p "$LOCAL_DIR"
-if [[ "$TLS_ENABLED" == "true" && "$CHECKPOINT_RELEASE" == "R81" && "$R81_TLS_MANUAL" == "true" ]]; then
+if [[ "$SKIP_POLICY_CONFIGURATION" == "false" &&
+  "$TLS_ENABLED" == "true" &&
+  "$CHECKPOINT_RELEASE" == "R81" &&
+  "$R81_TLS_MANUAL" == "true" ]]; then
   ca_file="${CHECKPOINT_TLS_CA_FILE:-}"
   [[ -f "$ca_file" ]] ||
     die "R81 manual TLS mode requires CHECKPOINT_TLS_CA_FILE with the SmartConsole-exported public CA."
@@ -78,6 +87,7 @@ policy_args=(
   "$COMPANY_DOMAIN"
   "$CHECKPOINT_RELEASE"
   "$R81_TLS_MANUAL"
+  "$SKIP_POLICY_CONFIGURATION"
 )
 
 transport="${CHECKPOINT_TRANSPORT:-auto}"
@@ -98,6 +108,19 @@ ssh_options=(
   -o StrictHostKeyChecking=accept-new
   -o "UserKnownHostsFile=$LOCAL_DIR/known_hosts"
 )
+if [[ "$SKIP_POLICY_CONFIGURATION" == "true" ]]; then
+  readiness_description="Gaia CLI and Log Exporter"
+  readiness_command='command -v clish >/dev/null &&
+   command -v cp_conf >/dev/null &&
+   command -v cp_log_export >/dev/null &&
+   command -v timeout >/dev/null &&
+   timeout 30 clish -c "show version all" >/dev/null 2>&1'
+else
+  readiness_description="Management API and Log Exporter"
+  readiness_command='command -v mgmt_cli >/dev/null &&
+   command -v cp_log_export >/dev/null &&
+   timeout 30 mgmt_cli -r true show packages limit 1 --format json >/dev/null 2>&1'
+fi
 
 use_ssh=false
 if [[ "$transport" != "auto" && "$transport" != "ssh" && "$transport" != "run-command" ]]; then
@@ -115,13 +138,11 @@ if [[ "$transport" != "run-command" && "$reconcile_ssh_rule" == "true" ]]; then
 fi
 
 if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
-  echo "Waiting up to ${ssh_wait_seconds}s for the Management API over restricted Gaia SSH..."
+  echo "Waiting up to ${ssh_wait_seconds}s for the ${readiness_description} over Gaia SSH..."
   ssh_deadline=$((SECONDS + ssh_wait_seconds))
   while true; do
     if ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" \
-      'command -v mgmt_cli >/dev/null &&
-       command -v cp_log_export >/dev/null &&
-       timeout 30 mgmt_cli -r true show packages limit 1 --format json >/dev/null 2>&1' \
+      "$readiness_command" \
       >/dev/null 2>&1; then
       use_ssh=true
       break
@@ -135,24 +156,24 @@ if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
 fi
 
 if [[ "$transport" == "ssh" ]] && ! $use_ssh; then
-  die "The Gaia Management API did not become ready over SSH within ${ssh_wait_seconds}s."
+  die "The ${readiness_description} did not become ready over SSH within ${ssh_wait_seconds}s."
 fi
 if [[ "$transport" == "auto" ]] && ! $use_ssh; then
-  echo "The Management API was unavailable over SSH; falling back to Azure VM Run Command."
+  echo "The ${readiness_description} was unavailable over SSH; falling back to Azure VM Run Command."
 fi
 
 if $use_ssh; then
-  echo "Configuring Check Point policy over restricted SSH as Gaia admin."
+  echo "Configuring the Check Point gateway over Gaia SSH as admin."
   if ! ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" bash -s -- "${policy_args[@]}" \
     <"$ROOT/scripts/checkpoint-policy.sh" \
     >"$LOCAL_DIR/checkpoint-policy-output.txt" \
     2>"$LOCAL_DIR/checkpoint-policy-stderr.log"; then
     tail -80 "$LOCAL_DIR/checkpoint-policy-stderr.log" >&2
-    die "Check Point policy script failed over SSH."
+    die "Check Point gateway configuration script failed over SSH."
   fi
   message="$(cat "$LOCAL_DIR/checkpoint-policy-output.txt")"
 else
-  echo "Configuring Check Point policy through Azure VM Run Command; first boot can take 20-30 minutes."
+  echo "Configuring the Check Point gateway through Azure VM Run Command; first boot can take 20-30 minutes."
   policy_run_command_args=()
   policy_arg_index=1
   for policy_arg in "${policy_args[@]}"; do
@@ -171,10 +192,10 @@ else
   message="$(jq -r '.value[]?.message' "$LOCAL_DIR/checkpoint-policy-run-command.json")"
 fi
 
-grep -q 'DEMO_POLICY_STATUS=complete' <<<"$message" ||
-  die "Check Point policy script did not report completion. See $LOCAL_DIR/checkpoint-policy-*."
+grep -q 'DEMO_CONFIGURATION_STATUS=complete' <<<"$message" ||
+  die "Check Point gateway configuration did not report completion. See $LOCAL_DIR/checkpoint-policy-*."
 
-if [[ "$TLS_ENABLED" == "true" ]]; then
+if [[ "$SKIP_POLICY_CONFIGURATION" == "false" && "$TLS_ENABLED" == "true" ]]; then
   if [[ "$CHECKPOINT_RELEASE" == "R81" && "$R81_TLS_MANUAL" == "true" ]]; then
     :
   else
@@ -199,7 +220,9 @@ if [[ "$TLS_ENABLED" == "true" ]]; then
   done
 fi
 
-if [[ "$TLS_ENABLED" == "true" ]]; then
+if [[ "$SKIP_POLICY_CONFIGURATION" == "true" ]]; then
+  echo "Gaia routing, management access, and Log Exporter configuration completed; Management API policy automation was skipped."
+elif [[ "$TLS_ENABLED" == "true" ]]; then
   echo "Check Point L4/L7, Geo, TLS, routing policy, and Log Exporter configuration completed."
 else
   echo "Check Point L4/L7, Geo, routing policy, and Log Exporter configuration completed; TLS inspection is disabled."
