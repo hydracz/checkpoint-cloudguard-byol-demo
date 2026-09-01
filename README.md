@@ -330,7 +330,7 @@ Gateway 配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通�
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
 若测试订阅自动删除 Terraform 创建的 SSH NSG rules，可在确认符合 Azure Policy 后
 显式设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`；脚本只按 Terraform output 中的
-`management_cidrs` 恢复 TCP/22 临时 rules，并在操作结束时删除它临时创建的 rules。
+`management_cidrs` 恢复一条包含全部 source prefixes 的 TCP/22 临时 rule，并在操作结束时删除它。
 如果省略 `management_cidrs`，恢复的来源同样是 `0.0.0.0/0`。普通客户环境已有稳定的
 入站规则时不应设置该开关。
 

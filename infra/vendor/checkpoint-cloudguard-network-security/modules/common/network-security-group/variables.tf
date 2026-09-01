@@ -34,7 +34,7 @@ variable "nsg_id" {
 
 //********************* Security Rules definition **************************//
 variable "security_rules" {
-  description = "Security rules for the Network Security Group using this format name = [priority, direction, access, protocol, source_port_range, destination_port_range, source_address_prefix, destination_address_prefix, description]"
+  description = "Security rules for the Network Security Group. Each rule may use source_address_prefix or source_address_prefixes."
   type        = list(any)
   default     = []
 }

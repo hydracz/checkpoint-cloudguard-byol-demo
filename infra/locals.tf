@@ -37,11 +37,6 @@ locals {
 
   management_cidrs        = distinct(var.management_cidrs)
   primary_management_cidr = try(local.management_cidrs[0], "0.0.0.0/0")
-  additional_management_cidrs = length(local.management_cidrs) > 1 ? slice(
-    local.management_cidrs,
-    1,
-    length(local.management_cidrs),
-  ) : []
   management_service_ports = [
     { name = "SSH", port = "22" },
     { name = "GaiaPortal", port = "443" },
@@ -49,7 +44,7 @@ locals {
     { name = "SmartConsole19009", port = "19009" },
   ]
 
-  checkpoint_primary_management_security_rules = [
+  checkpoint_management_security_rules = [
     for service_index, service in local.management_service_ports : {
       name                       = "AllowRestricted${service.name}"
       priority                   = tostring(100 + service_index)
@@ -58,33 +53,13 @@ locals {
       protocol                   = "Tcp"
       source_port_ranges         = "*"
       destination_port_ranges    = service.port
-      description                = "${service.name} management access from ${local.primary_management_cidr}"
-      source_address_prefix      = local.primary_management_cidr
+      description                = "${service.name} access from configured management CIDRs"
+      source_address_prefixes    = local.management_cidrs
       destination_address_prefix = "*"
     }
   ]
 
-  checkpoint_additional_management_security_rules = flatten([
-    for cidr_index, cidr in local.additional_management_cidrs : [
-      for service_index, service in local.management_service_ports : {
-        name                       = format("AllowRestricted%s%02d", service.name, cidr_index + 2)
-        priority                   = tostring(104 + (cidr_index * length(local.management_service_ports)) + service_index)
-        direction                  = "Inbound"
-        access                     = "Allow"
-        protocol                   = "Tcp"
-        source_port_ranges         = "*"
-        destination_port_ranges    = service.port
-        description                = "${service.name} management access from ${cidr}"
-        source_address_prefix      = cidr
-        destination_address_prefix = "*"
-      }
-    ]
-  ])
-  checkpoint_additional_management_security_rules_by_name = {
-    for rule in local.checkpoint_additional_management_security_rules : rule.name => rule
-  }
-
-  checkpoint_security_rules = concat(local.checkpoint_primary_management_security_rules, [
+  checkpoint_security_rules = concat(local.checkpoint_management_security_rules, [
     {
       name                       = "AllowEUProtectedNetwork"
       priority                   = "500"
@@ -94,7 +69,7 @@ locals {
       source_port_ranges         = "*"
       destination_port_ranges    = "*"
       description                = "Forwarded traffic from the primary EU spoke"
-      source_address_prefix      = var.eu_spoke_address_space
+      source_address_prefixes    = [var.eu_spoke_address_space]
       destination_address_prefix = "*"
     },
     {
@@ -106,7 +81,7 @@ locals {
       source_port_ranges         = "*"
       destination_port_ranges    = "*"
       description                = "Forwarded traffic from the cross-region spoke"
-      source_address_prefix      = var.remote_spoke_address_space
+      source_address_prefixes    = [var.remote_spoke_address_space]
       destination_address_prefix = "*"
     }
     ], var.enable_inbound_demo ? [
@@ -119,7 +94,7 @@ locals {
       source_port_ranges         = "*"
       destination_port_ranges    = "18080"
       description                = "Optional source-restricted north-south DNAT demo"
-      source_address_prefix      = var.inbound_demo_source_cidr
+      source_address_prefixes    = [var.inbound_demo_source_cidr]
       destination_address_prefix = "*"
     }
   ] : [])

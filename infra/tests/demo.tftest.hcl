@@ -24,7 +24,6 @@ run "default_demo_plan" {
     tenant_id                      = "00000000-0000-0000-0000-000000000000"
     client_id                      = "00000000-0000-0000-0000-000000000000"
     client_secret                  = "validation-only"
-    management_cidrs               = ["203.0.113.10/32"]
     admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
     sic_key                        = "validation-only-sic-key"
     checkpoint_os_version          = "R82"
@@ -40,26 +39,33 @@ run "default_demo_plan" {
 
   assert {
     condition     = length(local.checkpoint_security_rules) == 6
-    error_message = "The default gateway NSG must contain six least-privilege rules."
+    error_message = "The default gateway NSG must contain six rules."
   }
 
   assert {
     condition = (
       length(local.management_cidrs) == 1 &&
-      local.management_cidrs[0] == "203.0.113.10/32"
+      local.management_cidrs[0] == "0.0.0.0/0" &&
+      local.primary_management_cidr == "0.0.0.0/0" &&
+      alltrue([
+        for rule in local.checkpoint_management_security_rules :
+        length(rule.source_address_prefixes) == 1 &&
+        rule.source_address_prefixes[0] == "0.0.0.0/0"
+      ])
     )
-    error_message = "The management CIDR list must drive all administrator access."
+    error_message = "Omitting management_cidrs must allow administrator access from any IPv4 address."
   }
 
   assert {
     condition = alltrue([
       for rule in local.checkpoint_security_rules :
-      can(rule.source_address_prefix) &&
+      try(rule.source_address_prefix, null) == null &&
+      length(rule.source_address_prefixes) > 0 &&
       can(rule.source_port_ranges) &&
       can(rule.destination_port_ranges) &&
       can(rule.destination_address_prefix)
     ])
-    error_message = "Every rule must use the single-value fields required by the upstream NSG module."
+    error_message = "Every gateway rule must use the plural source-address prefix field supported by the vendored NSG module."
   }
 
   assert {
@@ -106,14 +112,21 @@ run "multiple_management_cidrs" {
   assert {
     condition = (
       length(local.management_cidrs) == 2 &&
-      length(local.checkpoint_primary_management_security_rules) == 4 &&
-      length(local.checkpoint_additional_management_security_rules) == 4 &&
-      local.checkpoint_additional_management_security_rules[0].name == "AllowRestrictedSSH02" &&
-      local.checkpoint_additional_management_security_rules[0].source_address_prefix == "198.51.100.0/24" &&
-      local.checkpoint_additional_management_security_rules[3].name == "AllowRestrictedSmartConsole1900902" &&
-      azurerm_network_security_rule.checkpoint_additional_management["AllowRestrictedSSH02"].priority == 104
+      length(local.checkpoint_management_security_rules) == 4 &&
+      length(local.checkpoint_security_rules) == 6 &&
+      local.checkpoint_management_security_rules[0].name == "AllowRestrictedSSH" &&
+      local.checkpoint_management_security_rules[0].priority == "100" &&
+      local.checkpoint_management_security_rules[3].name == "AllowRestrictedSmartConsole19009" &&
+      alltrue([
+        for rule in local.checkpoint_management_security_rules :
+        try(rule.source_address_prefix, null) == null &&
+        toset(rule.source_address_prefixes) == toset([
+          "203.0.113.10/32",
+          "198.51.100.0/24",
+        ])
+      ])
     )
-    error_message = "Each management CIDR must receive deterministic rules for all four administrator services."
+    error_message = "Each administrator service must use one deterministic rule containing all management CIDRs."
   }
 }
 

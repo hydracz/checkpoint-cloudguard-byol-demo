@@ -18,7 +18,8 @@ resource "azurerm_network_security_rule" "security_rule" {
   source_port_range           = lookup(var.security_rules[count.index], "source_port_ranges")
   destination_port_range      = lookup(var.security_rules[count.index], "destination_port_ranges")
   description                 = lookup(var.security_rules[count.index], "description")
-  source_address_prefix       = lookup(var.security_rules[count.index], "source_address_prefix")
+  source_address_prefix       = lookup(var.security_rules[count.index], "source_address_prefix", null)
+  source_address_prefixes     = lookup(var.security_rules[count.index], "source_address_prefixes", null)
   destination_address_prefix  = lookup(var.security_rules[count.index], "destination_address_prefix")
   resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.nsg[0].name

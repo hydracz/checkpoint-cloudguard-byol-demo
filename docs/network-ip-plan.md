@@ -105,7 +105,7 @@ UDR、Gaia 静态路由和 Anti-Spoofing 配置。
 
 | 优先级 | 来源 | 协议/端口 | 目的 |
 | --- | --- | --- | --- |
-| 100-299 | `management_cidrs`（每个 CIDR/端口各一条） | TCP/22、443、18190、19009 | SSH、Gaia Portal、SmartConsole |
+| 100-103 | `management_cidrs`（每个端口一条，规则内包含全部 CIDR） | TCP/22、443、18190、19009 | SSH、Gaia Portal、SmartConsole |
 | 500 | `10.61.0.0/16` | `Any` | 主 Spoke 转发流量 |
 | 510 | `10.62.0.0/16` | `Any` | 远端 Spoke 转发流量 |
 | 520（条件化） | `inbound_demo_source_cidr` | TCP/18080 | 可选 DNAT 演示 |

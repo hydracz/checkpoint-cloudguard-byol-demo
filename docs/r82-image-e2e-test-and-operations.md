@@ -147,8 +147,8 @@ export CHECKPOINT_RECONCILE_SSH_RULE=true
 
 本 E2E 显式填写 `management_cidrs` 以限制管理员来源；省略时默认为
 `["0.0.0.0/0"]`。单个公网 IP 使用 `/32`，办公室或 VPN 出口可写批准的 CIDR；
-执行首次部署的当前出口放在首项。Terraform 为每个来源创建
-SSH、Gaia Portal 和 SmartConsole NSG rules，策略脚本把同一列表写入 GUI Clients 和
+执行首次部署的当前出口放在首项。Terraform 为 SSH、Gaia Portal 和 SmartConsole 的
+每个端口创建一条包含全部来源的 NSG rule，策略脚本把同一列表写入 GUI Clients 和
 `CloudGuard-SSH-Sources`。普通客户环境不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
 
 部署脚本使用 `checkpoint_admin_password` 自动配置 Console 和 Gaia CLI/Portal；

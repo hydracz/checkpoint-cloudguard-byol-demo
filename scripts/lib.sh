@@ -32,82 +32,71 @@ RESTRICTED_SSH_RULE_CREATED="${RESTRICTED_SSH_RULE_CREATED:-false}"
 RESTRICTED_SSH_SUBSCRIPTION=""
 RESTRICTED_SSH_RESOURCE_GROUP=""
 RESTRICTED_SSH_NSG_NAME=""
-RESTRICTED_SSH_RULE_NAMES=()
+RESTRICTED_SSH_RULE_NAME=""
 
 ensure_restricted_ssh_nsg_rules() {
   local subscription="$1" resource_group="$2" nsg_id="$3" management_cidrs_json="$4"
   local gateway_nsg_name="${nsg_id##*/}"
-  local cidr index=0 priority rule_name
+  local cidr
+  local -a management_cidrs=()
+  local rule_name="AllowRestrictedSSH"
 
   printf '%s' "$management_cidrs_json" |
     jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' >/dev/null ||
     die "management_cidrs Terraform output must be a non-empty JSON string array."
 
   while IFS= read -r cidr; do
-    if ((index == 0)); then
-      rule_name="AllowRestrictedSSH"
-    else
-      printf -v rule_name 'AllowRestrictedSSH%02d' "$((index + 1))"
-    fi
-    priority=$((100 + (index * 4)))
-
-    if az network nsg rule show \
-      --subscription "$subscription" \
-      --resource-group "$resource_group" \
-      --nsg-name "$gateway_nsg_name" \
-      --name "$rule_name" \
-      -o none 2>/dev/null; then
-      index=$((index + 1))
-      continue
-    fi
-
-    echo "Restoring Terraform-managed SSH NSG rule $rule_name for $cidr."
-    az network nsg rule create \
-      --subscription "$subscription" \
-      --resource-group "$resource_group" \
-      --nsg-name "$gateway_nsg_name" \
-      --name "$rule_name" \
-      --priority "$priority" \
-      --direction Inbound \
-      --access Allow \
-      --protocol Tcp \
-      --source-address-prefixes "$cidr" \
-      --source-port-ranges '*' \
-      --destination-address-prefixes '*' \
-      --destination-port-ranges 22 \
-      --description "Restricted SSH access from $cidr" \
-      --only-show-errors \
-      -o none
-    RESTRICTED_SSH_RULE_CREATED=true
-    RESTRICTED_SSH_SUBSCRIPTION="$subscription"
-    RESTRICTED_SSH_RESOURCE_GROUP="$resource_group"
-    RESTRICTED_SSH_NSG_NAME="$gateway_nsg_name"
-    RESTRICTED_SSH_RULE_NAMES+=("$rule_name")
-    index=$((index + 1))
+    management_cidrs+=("$cidr")
   done < <(printf '%s' "$management_cidrs_json" | jq -e -r '.[]')
+
+  if az network nsg rule show \
+    --subscription "$subscription" \
+    --resource-group "$resource_group" \
+    --nsg-name "$gateway_nsg_name" \
+    --name "$rule_name" \
+    -o none 2>/dev/null; then
+    return
+  fi
+
+  echo "Restoring Terraform-managed SSH NSG rule $rule_name for configured management CIDRs."
+  az network nsg rule create \
+    --subscription "$subscription" \
+    --resource-group "$resource_group" \
+    --nsg-name "$gateway_nsg_name" \
+    --name "$rule_name" \
+    --priority 100 \
+    --direction Inbound \
+    --access Allow \
+    --protocol Tcp \
+    --source-address-prefixes "${management_cidrs[@]}" \
+    --source-port-ranges '*' \
+    --destination-address-prefixes '*' \
+    --destination-port-ranges 22 \
+    --description "Restricted SSH access from configured management CIDRs" \
+    --only-show-errors \
+    -o none
+  RESTRICTED_SSH_RULE_CREATED=true
+  RESTRICTED_SSH_SUBSCRIPTION="$subscription"
+  RESTRICTED_SSH_RESOURCE_GROUP="$resource_group"
+  RESTRICTED_SSH_NSG_NAME="$gateway_nsg_name"
+  RESTRICTED_SSH_RULE_NAME="$rule_name"
 }
 
 remove_temporary_restricted_ssh_nsg_rule() {
-  local failed=false rule_name
   if [[ "$RESTRICTED_SSH_RULE_CREATED" == "true" ]]; then
-    for rule_name in "${RESTRICTED_SSH_RULE_NAMES[@]}"; do
-      echo "Removing temporary SSH NSG rule $rule_name."
-      if ! az network nsg rule delete \
-        --subscription "$RESTRICTED_SSH_SUBSCRIPTION" \
-        --resource-group "$RESTRICTED_SSH_RESOURCE_GROUP" \
-        --nsg-name "$RESTRICTED_SSH_NSG_NAME" \
-        --name "$rule_name" \
-        --only-show-errors \
-        -o none; then
-        echo "ERROR: Failed to remove temporary SSH rule $rule_name from $RESTRICTED_SSH_NSG_NAME." >&2
-        failed=true
-      fi
-    done
+    echo "Removing temporary SSH NSG rule $RESTRICTED_SSH_RULE_NAME."
+    if ! az network nsg rule delete \
+      --subscription "$RESTRICTED_SSH_SUBSCRIPTION" \
+      --resource-group "$RESTRICTED_SSH_RESOURCE_GROUP" \
+      --nsg-name "$RESTRICTED_SSH_NSG_NAME" \
+      --name "$RESTRICTED_SSH_RULE_NAME" \
+      --only-show-errors \
+      -o none; then
+      echo "ERROR: Failed to remove temporary SSH rule $RESTRICTED_SSH_RULE_NAME from $RESTRICTED_SSH_NSG_NAME." >&2
+      return 1
+    fi
     RESTRICTED_SSH_RULE_CREATED=false
-    RESTRICTED_SSH_RULE_NAMES=()
-  fi
-  if $failed; then
-    return 1
+    RESTRICTED_SSH_RULE_NAME=""
   fi
   return 0
 }

@@ -49,6 +49,9 @@ checkpoint-cloudguard-network-security/
 - `modules/common/common/variables.tf`
   - 允许 Azure China 导出的 R81 `cgi-mgmt-r81` 无 Plan custom image
   - 仅扩展模块输入校验；默认 Azure Global Marketplace 仍只使用 R82/R82.10
+- `modules/common/network-security-group/{main,variables}.tf`
+  - 支持 AzureRM `source_address_prefixes`
+  - 同一管理端口的一条 NSG rule 可包含多个管理员 CIDR
 
 除 `PATCHES.md` 明确记录的修改外，Check Point module 的资源逻辑、变量和
 cloud-init 保持上游实现。

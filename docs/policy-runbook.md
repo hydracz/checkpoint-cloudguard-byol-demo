@@ -46,8 +46,9 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 出站 Hide NAT。不依赖 R82 才支持的 `nat-hide-internal-interfaces` Management API
 参数，因此 R81/R82 使用相同策略路径；T16 检查远端 Web journal 中的真实来源地址。
 
-`management_cidrs` 是所有管理员操作的来源清单，省略时默认为 `0.0.0.0/0`。Terraform 为每个 CIDR 创建
-SSH、Gaia Portal 和 SmartConsole NSG rules；策略脚本用 `cp_conf client createlist`
+`management_cidrs` 是所有管理员操作的来源清单，省略时默认为 `0.0.0.0/0`。Terraform 为
+SSH、Gaia Portal 和 SmartConsole 的每个端口创建一条 NSG rule，并把全部 CIDR 合并到
+该 rule 的 source prefixes；策略脚本用 `cp_conf client createlist`
 同步完整 GUI Clients；仅在 `skip_policy_configuration=false` 时为每个 CIDR 创建 network object 放入
 `CloudGuard-SSH-Sources` group。SSH rule 的目标只包含 Gateway object，其他公网来源
 不能访问管理服务。
@@ -159,8 +160,8 @@ Export Rule。
   Azure Run Command；跳过策略时不探测 Management API。可用
   `CHECKPOINT_SSH_WAIT_SECONDS` 和 `CHECKPOINT_SSH_RETRY_SECONDS` 调整。
 - 若测试订阅自动删除 Terraform-managed SSH rules，在确认允许恢复后设置
-  `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本按 `management_cidrs` output 临时恢复每个
-  TCP/22 rule，并在操作结束时删除它临时创建的 rules；默认 `false`，不会自动对抗
+  `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本按 `management_cidrs` output 临时恢复一条
+  包含全部 source prefixes 的 TCP/22 rule，并在操作结束时删除它；默认 `false`，不会自动对抗
   组织 Policy。省略 `management_cidrs` 时来源为 `0.0.0.0/0`。
 - `configure-policy.sh` 可重复执行；默认只协调 Gaia/Log Exporter。设置
   `skip_policy_configuration=false` 后才重建 `CloudGuard Demo - ` 规则、NAT 规则和

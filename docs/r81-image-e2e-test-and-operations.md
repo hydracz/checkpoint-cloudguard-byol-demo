@@ -120,8 +120,8 @@ inbound_demo_source_cidr = "<CURRENT_PUBLIC_IPV4>/32"
 ```
 
 本 E2E 显式填写 `management_cidrs` 以限制管理员来源；当前默认值是
-`["0.0.0.0/0"]`。Terraform 接受 1-50 个 CIDR，并为每个不同来源创建 SSH、Gaia
-Portal 和 SmartConsole NSG rules。上游模块
+`["0.0.0.0/0"]`。Terraform 接受 1-50 个 CIDR，为 SSH、Gaia Portal 和 SmartConsole
+的每个端口创建一条包含全部来源的 NSG rule。上游模块
 首次启动只能接收一个 network，因此首项用于 bootstrap；策略配置随后用
 `cp_conf client createlist` 同步完整 GUI Clients，并把同一列表写入
 `CloudGuard-SSH-Sources`，避免 Azure 与 Gateway 管理来源不一致。
@@ -161,8 +161,8 @@ export CHECKPOINT_RECONCILE_SSH_RULE=true
 ./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
 ```
 
-该开关只按 Terraform output 中的严格限源 CIDR 临时恢复缺失的 TCP/22 rules，不会
-创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rules。R81 first boot 中 SSH 可能
+该开关只按 Terraform output 中的严格限源 CIDR 临时恢复一条缺失的 TCP/22 rule，不会
+创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rule。R81 first boot 中 SSH 可能
 先于 Management API 和 Log Exporter 可用，部署脚本等待 `mgmt_cli` 登录和
 `cp_log_export` 均就绪后才配置策略。
 
@@ -182,7 +182,7 @@ az network nsg rule list \
   --subscription "$SUB" \
   --resource-group "$RG" \
   --nsg-name "$NSG" \
-  --query "[?destinationPortRange=='22'].{name:name,priority:priority,source:sourceAddressPrefix}" \
+  --query "[?destinationPortRange=='22'].{name:name,priority:priority,sources:sourceAddressPrefixes}" \
   --output table
 
 ssh-keygen -R "$IP" -f .local/known_hosts 2>/dev/null || true

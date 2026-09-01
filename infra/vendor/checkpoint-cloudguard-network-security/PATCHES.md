@@ -94,3 +94,14 @@ VM 时继续传入原始 Publisher、Offer 和 Plan，不能借 custom image 绕
 `R81`/`cgi-mgmt-r81` 参数。根 module 只在显式选择无 Plan custom image 时允许
 R81；本地校验同步接受这两个值，使相同的 `cloud-init` 首次配置参数能传给 R81
 镜像。该 patch 不新增 R81 Global Marketplace 部署路径。
+
+## Patch 7：NSG rule 支持多个来源前缀
+
+涉及文件：
+
+- `modules/common/network-security-group/main.tf`
+- `modules/common/network-security-group/variables.tf`
+
+上游 NSG module 只读取单个 `source_address_prefix`。本地副本同时支持 AzureRM 的
+`source_address_prefixes`，使同一管理端口的一条 rule 可以包含全部
+`management_cidrs`，避免按 CIDR 复制规则。每条 rule 仍只能设置单数或复数字段之一。
