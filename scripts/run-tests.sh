@@ -5,12 +5,37 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/scripts/lib.sh"
 
-load_runtime_environment
+OUTPUTS_FILE=""
+OUT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --outputs-file)
+      [[ $# -ge 2 ]] || die "--outputs-file requires a path."
+      [[ -f "$2" ]] || die "Terraform outputs file not found: $2"
+      OUTPUTS_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+      shift 2
+      ;;
+    --output-dir)
+      [[ $# -ge 2 ]] || die "--output-dir requires a path."
+      OUT="$2"
+      shift 2
+      ;;
+    *)
+      die "Usage: $0 [--outputs-file FILE] [--output-dir DIR]"
+      ;;
+  esac
+done
+
 require_cmd az
 require_cmd openssl
 require_cmd python3
 
-outputs="$("$TERRAFORM" -chdir="$INFRA" output -json)"
+trace_outputs=false
+if [[ "$-" == *x* ]]; then
+  trace_outputs=true
+  set +x
+fi
+outputs="$(load_terraform_outputs "$OUTPUTS_FILE")"
 output_value() {
   printf '%s' "$outputs" | jq -r --arg key "$1" '
     if has($key) then .[$key].value
@@ -26,6 +51,7 @@ GATEWAY_VM="$(output_value checkpoint_vm_name)"
 GATEWAY_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
 PACKAGE_NAME="$(output_value policy_package_name)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
+R81_TLS_MANUAL="$(printf '%s' "$outputs" | jq -r '.r81_tls_manually_configured.value // false')"
 EU_VM="$(output_value eu_workload_vm_name)"
 REMOTE_VM="$(output_value remote_workload_vm_name)"
 EU_IP="$(output_value eu_workload_private_ip)"
@@ -55,10 +81,23 @@ EXPECTED_CA_ISSUER="$COMPANY_DOMAIN"
   die "LOG_INGEST_RETRY_SECONDS must be a positive integer."
 [[ "$RECONCILE_SSH_RULE" == "true" || "$RECONCILE_SSH_RULE" == "false" ]] ||
   die "CHECKPOINT_RECONCILE_SSH_RULE must be true or false."
-if [[ "$TLS_ENABLED" == "true" && -f "$LOCAL_DIR/checkpoint-demo-ca.pem" ]]; then
+if [[ "$TLS_ENABLED" == "true" &&
+  "$CHECKPOINT_RELEASE" == "R81" &&
+  "$R81_TLS_MANUAL" == "true" ]]; then
+  ca_file="${CHECKPOINT_TLS_CA_FILE:-}"
+  [[ -f "$ca_file" ]] ||
+    die "R81 manual TLS validation requires CHECKPOINT_TLS_CA_FILE with the deployment's public CA."
+  if openssl x509 -in "$ca_file" -noout >/dev/null 2>&1; then
+    ca_format=()
+  elif openssl x509 -inform DER -in "$ca_file" -noout >/dev/null 2>&1; then
+    ca_format=(-inform DER)
+  else
+    die "CHECKPOINT_TLS_CA_FILE must contain a PEM or DER X.509 public certificate."
+  fi
   EXPECTED_CA_ISSUER="$(
     openssl x509 \
-      -in "$LOCAL_DIR/checkpoint-demo-ca.pem" \
+      "${ca_format[@]}" \
+      -in "$ca_file" \
       -noout \
       -subject \
       -nameopt RFC2253 |
@@ -68,13 +107,58 @@ fi
 EXPECTED_CA_ISSUER_ARG="base64:$(printf '%s' "$EXPECTED_CA_ISSUER" | openssl base64 -A)"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="$ROOT/evidence/$STAMP"
+if [[ -z "$OUT" ]]; then
+  OUT="$ROOT/evidence/$STAMP"
+elif [[ "$OUT" != /* ]]; then
+  OUT="$PWD/$OUT"
+fi
+[[ ! -e "$OUT/results.tsv" && ! -e "$OUT/report.md" ]] ||
+  die "Output directory already contains validation results: $OUT"
 mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"
+
+printf '%s' "$outputs" |
+  jq '
+    with_entries(
+      if (.value.sensitive // false)
+      then .value.value = "<redacted>"
+      else .
+      end
+    )
+  ' >"$OUT/deployment-outputs.json"
+
+if [[ -n "$OUTPUTS_FILE" ]]; then
+  outputs_source="outputs-file:${OUTPUTS_FILE##*/}"
+else
+  outputs_source="terraform-state"
+fi
+jq -n \
+  --arg generatedUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg outputsSource "$outputs_source" \
+  '{generatedUtc: $generatedUtc, outputsSource: $outputsSource}' \
+  >"$OUT/validation-metadata.json"
+unset outputs
+unset -f output_value
+if $trace_outputs; then
+  set -x
+fi
 
 RESULTS=()
 record() {
   RESULTS+=("$1|$2|$3")
 }
+
+ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$DEFAULT_SSH_PRIVATE_KEY}"
+if [[ "$RECONCILE_SSH_RULE" == "true" ]]; then
+  trap remove_temporary_restricted_ssh_nsg_rule EXIT
+  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
+fi
+metadata_tmp="$OUT/validation-metadata.json.tmp"
+jq \
+  --argjson temporarySshRuleCreated "$RESTRICTED_SSH_RULE_CREATED" \
+  '.temporarySshRuleCreated = $temporarySshRuleCreated' \
+  "$OUT/validation-metadata.json" >"$metadata_tmp"
+mv "$metadata_tmp" "$OUT/validation-metadata.json"
 
 validate_default_route() {
   local file="$1"
@@ -117,6 +201,7 @@ if az vm show \
   --subscription "$SUBSCRIPTION" \
   --resource-group "$RG" \
   --name "$GATEWAY_VM" \
+  --query '{name:name,location:location,vmSize:hardwareProfile.vmSize,imageReference:storageProfile.imageReference,plan:plan,provisioningState:provisioningState}' \
   -o json >"$image_evidence" 2>&1 &&
   jq -e \
     --arg image_id "$IMAGE_ID" \
@@ -124,12 +209,12 @@ if az vm show \
     --arg plan "$IMAGE_PLAN" \
     --argjson requires_plan "$IMAGE_REQUIRES_PLAN" '
       (if $image_id != "" then
-         ((.storageProfile.imageReference.id // "") | ascii_downcase) ==
+         ((.imageReference.id // "") | ascii_downcase) ==
          ($image_id | ascii_downcase)
        else
-         (.storageProfile.imageReference.publisher | ascii_downcase) == "checkpoint" and
-         .storageProfile.imageReference.offer == $offer and
-         .storageProfile.imageReference.sku == $plan
+         (.imageReference.publisher | ascii_downcase) == "checkpoint" and
+         .imageReference.offer == $offer and
+         .imageReference.sku == $plan
        end) and
       (if $requires_plan then
          (.plan.publisher | ascii_downcase) == "checkpoint" and
@@ -142,6 +227,48 @@ if az vm show \
   record T14 PASS "$(basename "$image_evidence")"
 else
   record T14 FAIL "$(basename "$image_evidence")"
+fi
+
+management_nsg_evidence="$OUT/T17-management-nsg-rules.json"
+management_nsg_name="${GATEWAY_NSG_ID##*/}"
+if az network nsg rule list \
+  --subscription "$SUBSCRIPTION" \
+  --resource-group "$RG" \
+  --nsg-name "$management_nsg_name" \
+  -o json >"$management_nsg_evidence" 2>&1 &&
+  jq -e \
+    --argjson cidrs "$MANAGEMENT_CIDRS_JSON" '
+      def sources:
+        if ((.sourceAddressPrefixes // []) | length) > 0 then
+          .sourceAddressPrefixes
+        elif (.sourceAddressPrefix // "") != "" then
+          [.sourceAddressPrefix]
+        else
+          []
+        end;
+      {
+        AllowRestrictedSSH: "22",
+        AllowRestrictedGaiaPortal: "443",
+        AllowRestrictedSmartConsole18190: "18190",
+        AllowRestrictedSmartConsole19009: "19009"
+      } as $expected |
+      [.[] | select($expected[.name] != null)] as $rules |
+      ($rules | length) == 4 and
+      all($rules[];
+        .direction == "Inbound" and
+        .access == "Allow" and
+        (.protocol | ascii_downcase) == "tcp" and
+        .destinationPortRange == $expected[.name] and
+        (sources | sort) == ($cidrs | sort)
+      )
+    ' "$management_nsg_evidence" >/dev/null; then
+  if [[ "$RESTRICTED_SSH_RULE_CREATED" == "true" ]]; then
+    record T17 RECONCILED "$(basename "$management_nsg_evidence")"
+  else
+    record T17 PASS "$(basename "$management_nsg_evidence")"
+  fi
+else
+  record T17 FAIL "$(basename "$management_nsg_evidence")"
 fi
 
 run_vm_case() {
@@ -162,7 +289,12 @@ run_vm_case() {
     "arg4=$EXPECTED_CA_ISSUER_ARG" \
     --only-show-errors \
     -o json >"$evidence" 2>&1; then
-    status="$(grep -o "__DEMO_RESULT=${case_id}:\\(PASS\\|FAIL\\|SKIP\\)" "$evidence" | tail -1 | cut -d: -f2)"
+    status="$(
+     grep -o "__DEMO_RESULT=${case_id}:\\(PASS\\|FAIL\\|SKIP\\)" "$evidence" |
+       tail -1 |
+       cut -d: -f2 ||
+       true
+    )"
   else
     status="FAIL"
   fi
@@ -192,11 +324,6 @@ run_vm_case T07 "$EU_VM" ""
 
 policy_evidence="$OUT/T08-T09-policy-and-exporter.json"
 gateway_inspected=false
-ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$DEFAULT_SSH_PRIVATE_KEY}"
-if [[ "$RECONCILE_SSH_RULE" == "true" ]]; then
-  trap remove_temporary_restricted_ssh_nsg_rule EXIT
-  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
-fi
 if [[ -f "$ssh_key" ]] &&
   ssh -i "$ssh_key" \
     -o ConnectTimeout=15 \
@@ -293,12 +420,12 @@ else
 fi
 
 region_evidence="$OUT/T12-eu-resource-locations.json"
-az resource list \
-  --subscription "$SUBSCRIPTION" \
-  --resource-group "$RG" \
-  --query '[].{name:name,type:type,location:location}' \
-  -o json >"$region_evidence"
-if python3 - "$region_evidence" <<'PY'
+if az resource list \
+    --subscription "$SUBSCRIPTION" \
+    --resource-group "$RG" \
+    --query '[].{name:name,type:type,location:location}' \
+    -o json >"$region_evidence" 2>&1 &&
+  python3 - "$region_evidence" <<'PY'
 import json
 import sys
 
@@ -327,32 +454,29 @@ else
   record T13 FAIL "$(basename "$inbound_evidence")"
 fi
 
-printf '%s\n' "${RESULTS[@]}" >"$OUT/results.tsv"
-python3 - "$OUT/results.tsv" "$OUT/summary.json" <<'PY'
-import datetime
-import json
-import sys
-
-rows = []
-for line in open(sys.argv[1], encoding="utf-8"):
-    case_id, status, evidence = line.rstrip("\n").split("|", 2)
-    rows.append({"id": case_id, "status": status, "evidence": evidence})
-with open(sys.argv[2], "w", encoding="utf-8") as output:
-    json.dump(
-        {
-            "generatedUtc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "results": rows,
-            "note": "PENDING_INGESTION and SKIP are deliberately not reported as PASS.",
-        },
-        output,
-        indent=2,
-    )
-PY
-
-echo "Evidence written to $OUT/summary.json."
-if awk -F '|' '$2 != "PASS" && $2 != "SKIP" { failed = 1 } END { exit(failed ? 0 : 1) }' "$OUT/results.tsv"; then
-  echo "One or more required tests did not pass. See $OUT/summary.json." >&2
-  exit 1
-fi
-remove_temporary_restricted_ssh_nsg_rule
+cleanup_exit_code=0
+remove_temporary_restricted_ssh_nsg_rule || cleanup_exit_code=1
 trap - EXIT
+
+if ((cleanup_exit_code != 0)); then
+  for result_index in "${!RESULTS[@]}"; do
+    if [[ "${RESULTS[$result_index]}" == T17\|RECONCILED\|* ]]; then
+      RESULTS[$result_index]="T17|FAIL|$(basename "$management_nsg_evidence")"
+    fi
+  done
+fi
+
+printf '%s\n' "${RESULTS[@]}" >"$OUT/results.tsv"
+validation_exit_code=0
+if awk -F '|' '$2 != "PASS" && $2 != "SKIP" && $2 != "RECONCILED" { failed = 1 } END { exit(failed ? 0 : 1) }' "$OUT/results.tsv"; then
+  validation_exit_code=1
+fi
+python3 "$ROOT/scripts/render-test-report.py" \
+  --evidence-dir "$OUT" \
+  --exit-code "$validation_exit_code"
+
+echo "Evidence written to $OUT/report.md and $OUT/summary.json."
+if ((validation_exit_code != 0)); then
+  echo "One or more required tests did not pass. See $OUT/report.md." >&2
+  exit "$validation_exit_code"
+fi

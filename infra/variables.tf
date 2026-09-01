@@ -96,6 +96,10 @@ variable "management_cidrs" {
     condition = (
       length(var.management_cidrs) > 0 &&
       length(var.management_cidrs) <= 50 &&
+      (
+        !contains(var.management_cidrs, "0.0.0.0/0") ||
+        length(var.management_cidrs) == 1
+      ) &&
       alltrue([
         for cidr in var.management_cidrs :
         try(
@@ -107,7 +111,7 @@ variable "management_cidrs" {
         )
       ])
     )
-    error_message = "management_cidrs must contain 1-50 canonical IPv4 networks with /0-/32 prefixes; use /32 for one IP."
+    error_message = "management_cidrs must contain 1-50 canonical IPv4 networks with /0-/32 prefixes; use /32 for one IP, and use 0.0.0.0/0 only as the sole entry."
   }
 }
 

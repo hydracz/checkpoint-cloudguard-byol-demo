@@ -92,8 +92,10 @@ wait_for_command cp_log_export
 MANAGEMENT_CIDRS_JSON="$(decode_json "$MANAGEMENT_CIDRS_B64")"
 MANAGEMENT_CIDR="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[0]')"
 SYNC_GUI_CLIENTS=true
+ALLOW_ANY_MANAGEMENT=false
 if jq -e 'length == 1 and .[0] == "0.0.0.0/0"' <<<"$MANAGEMENT_CIDRS_JSON" >/dev/null; then
   SYNC_GUI_CLIENTS=false
+  ALLOW_ANY_MANAGEMENT=true
 fi
 
 BACKEND_AZURE_GATEWAY="${BACKEND_IP%.*}.1"
@@ -352,43 +354,54 @@ ensure_dns_domain() {
 
 ensure_network "$EU_NETWORK" "${EU_CIDR%/*}" "${EU_CIDR#*/}"
 ensure_network "$REMOTE_NETWORK" "${REMOTE_CIDR%/*}" "${REMOTE_CIDR#*/}"
-ensure_network "$MANAGEMENT_NETWORK" "${MANAGEMENT_CIDR%/*}" "${MANAGEMENT_CIDR#*/}"
 ensure_host "$EU_WEB_HOST" "$EU_HOST_IP"
 WEB_SERVICE="HTTP_proxy"
 
 if api show group name "$MANAGEMENT_SOURCES_GROUP" >/dev/null 2>&1; then
   api delete group name "$MANAGEMENT_SOURCES_GROUP" >/dev/null
 fi
-if api show network name "${MANAGEMENT_SSH_NETWORK_PREFIX}-01" >/dev/null 2>&1; then
-  api delete network name "${MANAGEMENT_SSH_NETWORK_PREFIX}-01" >/dev/null
-fi
-
-MANAGEMENT_SSH_OBJECTS=("$MANAGEMENT_NETWORK")
-management_ssh_index=0
-while IFS= read -r cidr; do
-  management_ssh_index=$((management_ssh_index + 1))
-  if ((management_ssh_index == 1)); then
-    [[ "$cidr" == "$MANAGEMENT_CIDR" ]] || {
-      echo "The first management CIDR must match the bootstrap management network." >&2
-      exit 1
-    }
-    continue
+for stale_management_index in $(seq -w 1 50); do
+  stale_management_object="${MANAGEMENT_SSH_NETWORK_PREFIX}-${stale_management_index}"
+  if api show network name "$stale_management_object" >/dev/null 2>&1; then
+    api delete network name "$stale_management_object" >/dev/null
   fi
-  printf -v object_name '%s-%02d' "$MANAGEMENT_SSH_NETWORK_PREFIX" "$management_ssh_index"
-  ensure_network "$object_name" "${cidr%/*}" "${cidr#*/}"
-  MANAGEMENT_SSH_OBJECTS+=("$object_name")
-done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
-((management_ssh_index > 0)) || {
-  echo "At least one management CIDR is required." >&2
-  exit 1
-}
-management_group_command=(add group name "$MANAGEMENT_SOURCES_GROUP")
-management_ssh_index=1
-for object_name in "${MANAGEMENT_SSH_OBJECTS[@]}"; do
-  management_group_command+=("members.$management_ssh_index" "$object_name")
-  management_ssh_index=$((management_ssh_index + 1))
 done
-api "${management_group_command[@]}" >/dev/null
+
+if $ALLOW_ANY_MANAGEMENT; then
+  if api show network name "$MANAGEMENT_NETWORK" >/dev/null 2>&1; then
+    api delete network name "$MANAGEMENT_NETWORK" >/dev/null
+  fi
+  MANAGEMENT_POLICY_SOURCE="Any"
+else
+  ensure_network "$MANAGEMENT_NETWORK" "${MANAGEMENT_CIDR%/*}" "${MANAGEMENT_CIDR#*/}"
+  MANAGEMENT_SSH_OBJECTS=("$MANAGEMENT_NETWORK")
+  management_ssh_index=0
+  while IFS= read -r cidr; do
+    management_ssh_index=$((management_ssh_index + 1))
+    if ((management_ssh_index == 1)); then
+      [[ "$cidr" == "$MANAGEMENT_CIDR" ]] || {
+        echo "The first management CIDR must match the bootstrap management network." >&2
+        exit 1
+      }
+      continue
+    fi
+    printf -v object_name '%s-%02d' "$MANAGEMENT_SSH_NETWORK_PREFIX" "$management_ssh_index"
+    ensure_network "$object_name" "${cidr%/*}" "${cidr#*/}"
+    MANAGEMENT_SSH_OBJECTS+=("$object_name")
+  done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
+  ((management_ssh_index > 0)) || {
+    echo "At least one management CIDR is required." >&2
+    exit 1
+  }
+  management_group_command=(add group name "$MANAGEMENT_SOURCES_GROUP")
+  management_ssh_index=1
+  for object_name in "${MANAGEMENT_SSH_OBJECTS[@]}"; do
+    management_group_command+=("members.$management_ssh_index" "$object_name")
+    management_ssh_index=$((management_ssh_index + 1))
+  done
+  api "${management_group_command[@]}" >/dev/null
+  MANAGEMENT_POLICY_SOURCE="$MANAGEMENT_SOURCES_GROUP"
+fi
 
 if api show group name "$PROTECTED_GROUP" >/dev/null 2>&1; then
   api set group \
@@ -603,7 +616,7 @@ fi
 add_access_rule \
   layer "$ACCESS_LAYER" position 1 \
   name "${RULE_PREFIX}Allow Restricted Management SSH" \
-  source.1 "$MANAGEMENT_SOURCES_GROUP" destination.1 "$MANAGED_GATEWAY_NAME" \
+  source.1 "$MANAGEMENT_POLICY_SOURCE" destination.1 "$MANAGED_GATEWAY_NAME" \
   service.1 ssh \
   action Accept track.type Log install-on.1 "$MANAGED_GATEWAY_NAME"
 

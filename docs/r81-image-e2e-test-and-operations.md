@@ -394,13 +394,29 @@ az vm run-command invoke \
 
 ### 5.2 再运行完整自动矩阵
 
+当前流程可拆成两个独立阶段。第一阶段部署结束后保留
+`.local/latest-deployment-outputs.json`；第二阶段只需要该文件和可访问客户订阅的
+Azure CLI 身份，不依赖原 Terraform state。
+
+基础部署已完成、但尚未创建 Check Point policy 时，在完成 BYOL 激活后执行：
+
 ```bash
-export CHECKPOINT_RECONCILE_SSH_RULE=true # 只用于会删除 SSH rule 的测试订阅
-./scripts/run-tests.sh
-jq . evidence/*/summary.json | tail -80
+./scripts/validate-existing.sh \
+  --outputs-file .local/latest-deployment-outputs.json \
+  --expected-release R81 \
+  --configure-policy
 ```
 
-任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；只有未启用功能可记录 `SKIP`。
+如果 policy 已由第一阶段或人工流程配置，去掉 `--configure-policy`，脚本只执行验证。
+仅在测试订阅会删除 TCP/22 rule 时，额外设置
+`CHECKPOINT_RECONCILE_SSH_RULE=true`。生成目录中的 `report.md` 包含部署配置、结果表、
+每项原始命令输出和完整 `bash -x` 命令 trace；`summary.json` 与
+`configuration.json` 便于机器归档。任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；
+只有未启用功能可记录 `SKIP`。T17 额外验证 4 条管理 NSG rules 的 source prefixes 与
+`management_cidrs` 完全一致。
+如果 R81 已通过 SmartConsole bootstrap 启用 TLS，第二阶段还必须传入
+`--ca-file <SMARTCONSOLE_EXPORTED_PUBLIC_CA>`；测试订阅临时恢复 SSH rule 时，T17 明确记录
+`RECONCILED`，不会把随后删除的 rule 伪记为普通 PASS。
 
 ### 5.3 2026-08-30 复测结果
 

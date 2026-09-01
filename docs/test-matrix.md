@@ -18,6 +18,7 @@
 | T14 | 镜像与 Plan 模式 | Azure VM image reference 和 `plan` | 精确匹配 custom image ID；有 Plan 模式字段完整，无 Plan 模式为 `null`。 |
 | T15 | Guest Gaia 版本 | Gateway `clish -c "show version all"` | 与 `checkpoint_os_version` 对应。 |
 | T16 | 东西向源地址保留 | 远端 workload 的 `demo-web` journal | 请求源为主 workload IP，不是 Gateway Hide NAT 地址。 |
+| T17 | 管理 NSG rules | Azure NSG rule list | 4 条管理端口规则均为 Allow，且 source prefixes 与 `management_cidrs` 完全一致。 |
 
 运行：
 
@@ -25,9 +26,14 @@
 ./scripts/run-tests.sh
 ```
 
-`summary.json` 原样记录 `SKIP` 和 `PENDING_INGESTION`。脚本默认等待日志摄取最多
-30 分钟；任何 `FAIL` 或 `PENDING_INGESTION` 都返回非零，只有未启用功能的 `SKIP`
-不影响退出码。R81 尚未完成 SmartConsole TLS bootstrap 时 T07 为预期 `SKIP`；
-设置 `r81_tls_manually_configured=true` 并提供 `CHECKPOINT_TLS_CA_FILE` 后，T07 仍须
+已有部署推荐运行 `scripts/validate-existing.sh`；它可以读取第一阶段保存的
+`.local/latest-deployment-outputs.json`，同时生成 `report.md`、`summary.json`、
+逐项原始证据和完整 Bash 命令 trace。
+
+`summary.json` 原样记录 `SKIP`、`RECONCILED` 和 `PENDING_INGESTION`。`RECONCILED`
+表示测试期间临时恢复了随后删除的 SSH rule，不会伪记为普通 PASS。脚本默认等待日志摄取最多
+30 分钟；任何 `FAIL` 或 `PENDING_INGESTION` 都返回非零。R81 尚未完成 SmartConsole TLS
+bootstrap 时 T07 为预期 `SKIP`；设置 `r81_tls_manually_configured=true` 并通过
+`--ca-file` 或 `CHECKPOINT_TLS_CA_FILE` 提供该部署的 public CA 后，T07 仍须
 以实际 issuer 通过。Geo 的实际国家判定需要客户批准、可控且不会造成滥用的测试端点；
 T08 只检查策略对象，不能替代流量检查。

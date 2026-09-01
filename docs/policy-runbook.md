@@ -49,8 +49,9 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 `management_cidrs` 是所有管理员操作的来源清单，省略时默认为 `0.0.0.0/0`。Terraform 为
 SSH、Gaia Portal 和 SmartConsole 的每个端口创建一条 NSG rule，并把全部 CIDR 合并到
 该 rule 的 source prefixes；策略脚本用 `cp_conf client createlist`
-同步完整 GUI Clients；仅在 `skip_policy_configuration=false` 时为每个 CIDR 创建 network object 放入
-`CloudGuard-SSH-Sources` group。SSH rule 的目标只包含 Gateway object，其他公网来源
+同步完整 GUI Clients；仅在 `skip_policy_configuration=false` 且来源受限时为每个 CIDR 创建
+network object 放入 `CloudGuard-SSH-Sources` group。使用默认 `0.0.0.0/0` 时，Check Point
+policy 直接引用内置 `Any`，不会创建 R81 不支持的 `/0` network object。SSH rule 的目标只包含 Gateway object，其他公网来源
 不能访问管理服务。
 
 可选入站规则是 Geo Inbound 前的窄例外：它同时要求 Azure NSG 和 Check Point

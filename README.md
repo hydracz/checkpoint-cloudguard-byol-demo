@@ -267,6 +267,8 @@ ssh-keygen -lf .local/checkpoint-demo-ssh.pub
 `.local/` 和这两个具体路径均在 `.gitignore` 中；私钥不会写入 Terraform state，也不能
 提交。自动化默认使用该密钥。只有需要外部密钥时才同时设置
 `TF_VAR_admin_ssh_public_key` 和匹配的 `CHECKPOINT_SSH_PRIVATE_KEY`。
+并行测试多个 Terraform workspace 时，可分别设置 `CHECKPOINT_SSH_PRIVATE_KEY` 和
+`CHECKPOINT_DEPLOYMENT_SECRETS_FILE`，避免复用 SSH、SIC 和密码 hash 文件。
 
 Check Point Azure VM 的操作系统 SSH 用户是 `admin`。Azure VM metadata 中可能
 显示兼容占位用户名 `notused`，不要用它登录 Gaia。
@@ -322,6 +324,8 @@ syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Ex
 这一步避免空 workspace 返回 `Table does not exist`。随机 SIC key 和 Gaia
 `admin` 密码 hash 只写入权限为 `0600` 的 `.local/deployment-secrets.env`；明文密码
 保留在 gitignored tfvars，部署 SSH 私钥只写入 `.local/checkpoint-demo-ssh`。
+最终 Terraform outputs 同时保存到 `.local/latest-deployment-outputs.json`，作为第二阶段
+测试的无密钥交接文件；其中包含订阅、资源名和公网地址等基础设施标识，仍应按客户资料保护。
 
 Gateway 配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过 Gaia SSH 等待
 所需命令最多 30 分钟；默认模式只等待 Gaia CLI 和 Log Exporter，启用策略自动化后才
@@ -414,15 +418,49 @@ printf '%s\n' "$URL"
 如需保留环境供后续人工验证，完成后不要运行 `scripts/destroy.sh`；保留期间 Azure
 资源会继续计费。
 
-### 3. 检查数据路径
+### 3. 对已部署系统执行第二阶段自动测试
 
-以下自动策略/流量矩阵只适用于 `skip_policy_configuration=false`。默认模式无需执行。
+第一阶段完成基础设施部署后，不需要重新执行 `terraform apply`。如果 Gateway 策略已经配置，
+直接针对第一阶段输出运行只读验证；`--expected-release R81` 可防止误测其他版本：
 
 ```bash
-./scripts/run-tests.sh
+./scripts/validate-existing.sh \
+  --outputs-file .local/latest-deployment-outputs.json \
+  --expected-release R81
 ```
 
-命令把观察结果写入 `evidence/<UTC_TIMESTAMP>/summary.json`：
+R82 使用同一入口，只需改为 `--expected-release R82`；如果第一阶段只部署基础设施，
+同样增加 `--configure-policy`，第二阶段会自动配置 R82 policy 与 HTTPS Inspection 后再测试。
+R81 已通过 SmartConsole 启用 TLS 时，同时传入
+`--ca-file <SMARTCONSOLE_EXPORTED_PUBLIC_CA>`，避免使用其他部署遗留的 CA 判断 issuer。
+
+如果第一阶段使用 `--skip-policy` 只完成了基础部署，应先完成 R81 BYOL 激活，再显式允许
+第二阶段修改 Gateway、创建对象/规则并安装策略：
+
+```bash
+./scripts/validate-existing.sh \
+  --outputs-file .local/latest-deployment-outputs.json \
+  --expected-release R81 \
+  --configure-policy
+```
+
+`--configure-policy` 会用 `CHECKPOINT_SKIP_POLICY_CONFIGURATION=false` 调用
+`configure-policy.sh`；不传该开关时只验证现有配置。测试订阅若会删除 SSH NSG rule，可在命令前
+设置 `CHECKPOINT_RECONCILE_SSH_RULE=true`。没有 outputs 交接文件但仍保留原 Terraform state 时，
+也可省略 `--outputs-file`。
+
+每次运行生成独立的 `evidence/<UTC_TIMESTAMP>-stage2/`：
+
+- `report.md`：配置详情、结果表、每项真实输出和完整 Bash 命令 trace。
+- `summary.json` / `configuration.json`：便于自动归档和后续处理的结构化结果。
+- `T*.json` / `T*.txt`：Azure、Gaia、Management API 和真实流量命令的原始输出。
+- `commands.log`：`bash -x` 捕获的实际展开命令；`run-tests.log` 保存测试入口输出。
+
+报告包含客户订阅、IP、资源名、策略与流量原始输出，应按客户敏感资料保存；脚本会从
+`deployment-outputs.json` 中删除 Terraform 标记为 sensitive 的 output，并避免把整份原始
+outputs 展开到命令 trace。
+
+报告覆盖：
 
 | 检查 | 应观察到的字段或行为 |
 | --- | --- |
@@ -440,8 +478,10 @@ printf '%s\n' "$URL"
 | T14 | VM image reference 与精确 custom image ID、Plan 模式一致 |
 | T15 | Guest Gaia 版本与 `checkpoint_os_version` 一致 |
 | T16 | 跨 Spoke 请求到达远端时保留原 workload 源地址 |
+| T17 | 4 条管理 NSG rule 的端口、Allow 状态和 source prefixes 与 `management_cidrs` 一致 |
 
-`SKIP` 表示该功能未启用。脚本默认等待 Log Analytics 摄取最多 30 分钟；
+`SKIP` 表示该功能未启用。`RECONCILED` 表示测试订阅的外部策略删除了 SSH rule，脚本为
+测试临时恢复并在结束时删除；它不会被报告为普通 PASS。脚本默认等待 Log Analytics 摄取最多 30 分钟；
 `PENDING_INGESTION` 或任何 `FAIL` 都会让命令返回非零。
 
 ### 4. 查询日志

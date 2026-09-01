@@ -150,6 +150,26 @@ run "invalid_management_cidrs" {
   expect_failures = [var.management_cidrs]
 }
 
+run "invalid_mixed_allow_any_management_cidrs" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidrs               = ["0.0.0.0/0", "203.0.113.10/32"]
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+  }
+
+  expect_failures = [var.management_cidrs]
+}
+
 run "custom_image_plan" {
   command = plan
 

@@ -19,7 +19,8 @@ required=(
   scripts/verify-vendor.sh
   scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh
   scripts/enable-audit-export.sh
-  scripts/vm-case.sh scripts/run-tests.sh scripts/query-logs.sh
+  scripts/vm-case.sh scripts/run-tests.sh scripts/render-test-report.py scripts/validate-existing.sh
+  scripts/query-logs.sh
   scripts/lock-worm.sh scripts/destroy.sh
   docs/architecture.md docs/drawio-architecture.md docs/network-ip-plan.md
   docs/cloudguard-image-export.md
@@ -77,11 +78,18 @@ grep -q 'join("\\u001f")' "$ROOT/scripts/preflight.sh"
 grep -q 'CHECKPOINT_SSH_WAIT_SECONDS' "$ROOT/scripts/configure-policy.sh"
 grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/configure-policy.sh"
 grep -q 'CHECKPOINT_TLS_CA_FILE' "$ROOT/scripts/configure-policy.sh"
+! grep -q 'skip_policy_configuration.value // true' "$ROOT/scripts/configure-policy.sh"
 grep -q 'ensure_restricted_ssh_nsg_rules' "$ROOT/scripts/lib.sh"
 grep -q 'remove_temporary_restricted_ssh_nsg_rule' "$ROOT/scripts/lib.sh"
 grep -q 'Failed to remove temporary SSH rule' "$ROOT/scripts/lib.sh"
 grep -q 'checkpoint-demo-ssh' "$ROOT/scripts/lib.sh"
 grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/run-tests.sh"
+grep -q -- '--outputs-file' "$ROOT/scripts/configure-policy.sh" "$ROOT/scripts/run-tests.sh"
+grep -q 'Exact command trace' "$ROOT/scripts/render-test-report.py"
+grep -q 'CHECKPOINT_SKIP_POLICY_CONFIGURATION=false' "$ROOT/scripts/validate-existing.sh"
+grep -q -- '--ca-file' "$ROOT/scripts/validate-existing.sh"
+grep -q 'RECONCILED' "$ROOT/scripts/run-tests.sh" "$ROOT/scripts/render-test-report.py"
+grep -q 'unset outputs' "$ROOT/scripts/configure-policy.sh" "$ROOT/scripts/run-tests.sh"
 grep -q 'wait_for_command cp_log_export' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'api set group' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'name "${RULE_PREFIX}Hide Protected Networks"' "$ROOT/scripts/checkpoint-policy.sh"
@@ -110,6 +118,7 @@ grep -q 'cidrhost(cidr, 0) == split("/", cidr)\[0\]' "$ROOT/infra/variables.tf"
 grep -q 'output "management_cidrs"' "$ROOT/infra/outputs.tf"
 grep -q 'source_address_prefixes.*local.management_cidrs' "$ROOT/infra/locals.tf"
 grep -q 'cp_conf client createlist' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'MANAGEMENT_POLICY_SOURCE="Any"' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'default-via-checkpoint' "$ROOT/infra/networking.tf"
 grep -q 'remote-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
 grep -q 'eu-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
@@ -156,7 +165,7 @@ if grep -RInE \
   exit 1
 fi
 
-for id in $(seq -w 1 16); do
+for id in $(seq -w 1 17); do
   grep -q "T${id}" "$ROOT/docs/test-matrix.md" || {
     echo "T${id} absent from test matrix." >&2
     exit 1

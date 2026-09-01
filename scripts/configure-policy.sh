@@ -5,11 +5,30 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/scripts/lib.sh"
 
-load_runtime_environment
+OUTPUTS_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --outputs-file)
+      [[ $# -ge 2 ]] || die "--outputs-file requires a path."
+      [[ -f "$2" ]] || die "Terraform outputs file not found: $2"
+      OUTPUTS_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+      shift 2
+      ;;
+    *)
+      die "Usage: $0 [--outputs-file FILE]"
+      ;;
+  esac
+done
+
 require_cmd az
 require_cmd openssl
 
-outputs="$("$TERRAFORM" -chdir="$INFRA" output -json)"
+trace_outputs=false
+if [[ "$-" == *x* ]]; then
+  trace_outputs=true
+  set +x
+fi
+outputs="$(load_terraform_outputs "$OUTPUTS_FILE")"
 output_value() {
   printf '%s' "$outputs" | jq -r --arg key "$1" '
     if has($key) then .[$key].value
@@ -37,8 +56,16 @@ EU_HOST_IP="$(output_value eu_workload_private_ip)"
 PUBLIC_IP="$(output_value checkpoint_public_ip)"
 TLS_ENABLED="$(output_value enable_tls_inspection)"
 R81_TLS_MANUAL="$(printf '%s' "$outputs" | jq -r '.r81_tls_manually_configured.value // false')"
+EU_WORKLOAD_VM="$(output_value eu_workload_vm_name)"
+REMOTE_WORKLOAD_VM="$(output_value remote_workload_vm_name)"
 SKIP_POLICY_CONFIGURATION="$(
-  printf '%s' "$outputs" | jq -r '.skip_policy_configuration.value // true'
+  printf '%s' "$outputs" | jq -r '
+    if has("skip_policy_configuration") and
+       .skip_policy_configuration.value != null
+    then .skip_policy_configuration.value
+    else true
+    end
+  '
 )"
 SKIP_POLICY_CONFIGURATION="${CHECKPOINT_SKIP_POLICY_CONFIGURATION:-$SKIP_POLICY_CONFIGURATION}"
 INBOUND_ENABLED="$(output_value enable_inbound_demo)"
@@ -49,6 +76,11 @@ APPLICATIONS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_applications.value'
 URLS_B64="$(printf '%s' "$outputs" | jq -c '.blocked_urls.value' | openssl base64 -A)"
 [[ "$SKIP_POLICY_CONFIGURATION" == "true" || "$SKIP_POLICY_CONFIGURATION" == "false" ]] ||
   die "skip_policy_configuration must be true or false."
+unset outputs
+unset -f output_value
+if $trace_outputs; then
+  set -x
+fi
 
 mkdir -p "$LOCAL_DIR"
 if [[ "$SKIP_POLICY_CONFIGURATION" == "false" &&
@@ -207,8 +239,7 @@ if [[ "$SKIP_POLICY_CONFIGURATION" == "false" && "$TLS_ENABLED" == "true" ]]; th
 
   ca_pem_b64="$(openssl base64 -A -in "$LOCAL_DIR/checkpoint-demo-ca.pem")"
   install_command="printf '%s' '$ca_pem_b64' | base64 -d > /usr/local/share/ca-certificates/checkpoint-demo-ca.crt && update-ca-certificates"
-  for vm_output in eu_workload_vm_name remote_workload_vm_name; do
-    vm_name="$(output_value "$vm_output")"
+  for vm_name in "$EU_WORKLOAD_VM" "$REMOTE_WORKLOAD_VM"; do
     az vm run-command invoke \
       --subscription "$SUBSCRIPTION" \
       --resource-group "$RG" \

@@ -211,11 +211,22 @@ generate_checkpoint_password_hash() {
   printf '%s\n' "$password_hash"
 }
 
+deployment_secrets_file() {
+  local secrets_file="${CHECKPOINT_DEPLOYMENT_SECRETS_FILE:-$LOCAL_DIR/deployment-secrets.env}"
+  if [[ "$secrets_file" == /* ]]; then
+    printf '%s\n' "$secrets_file"
+  else
+    printf '%s/%s\n' "$ROOT" "${secrets_file#./}"
+  fi
+}
+
 persist_deployment_secrets() {
-  local secrets_file="$LOCAL_DIR/deployment-secrets.env"
+  local secrets_file
+  secrets_file="$(deployment_secrets_file)"
   local temporary_file="${secrets_file}.tmp.$$"
 
   umask 077
+  mkdir -p "$(dirname "$secrets_file")"
   {
     printf 'export TF_VAR_sic_key=%q\n' "$TF_VAR_sic_key"
     if [[ -n "${TF_VAR_checkpoint_admin_password_hash:-}" ]]; then
@@ -232,12 +243,32 @@ load_runtime_environment() {
   check_terraform_version
 }
 
+load_terraform_outputs() {
+  local outputs_file="${1:-}"
+
+  if [[ -n "$outputs_file" ]]; then
+    require_cmd jq
+    [[ -f "$outputs_file" ]] || die "Terraform outputs file not found: $outputs_file"
+    jq -e '
+      type == "object" and
+      length > 0 and
+      all(.[]; type == "object" and has("value"))
+    ' "$outputs_file" >/dev/null ||
+      die "Terraform outputs file must contain the JSON object produced by terraform output -json."
+    cat "$outputs_file"
+  else
+    load_runtime_environment
+    "$TERRAFORM" -chdir="$INFRA" output -json
+  fi
+}
+
 load_deployment_environment() {
   local var_file="${1:-}" require_checkpoint_password="${2:-true}"
   local configured_subscription target_subscription
   local configured_admin_password checkpoint_admin_password
   local sp_tenant sp_client sp_secret
   local supplied_public_key private_public_key
+  local secrets_file
 
   load_runtime_environment
   require_cmd openssl
@@ -283,10 +314,11 @@ load_deployment_environment() {
       die "TF_VAR_admin_ssh_public_key does not match CHECKPOINT_SSH_PRIVATE_KEY."
   fi
 
-  if [[ -f "$LOCAL_DIR/deployment-secrets.env" ]]; then
+  secrets_file="$(deployment_secrets_file)"
+  if [[ -f "$secrets_file" ]]; then
     # This file is generated locally and contains only the SIC key and password hash.
     # shellcheck disable=SC1091
-    source "$LOCAL_DIR/deployment-secrets.env"
+    source "$secrets_file"
   fi
 
   if [[ -z "${TF_VAR_sic_key:-}" ]]; then

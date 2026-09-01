@@ -236,16 +236,21 @@ Terraform state 中部署完整 standalone Demo，观察到：
 - T14：精确 image reference 和 Plan tuple
 - T15：Guest Gaia release
 - T16：东西向保留 workload 源 IP
+- T17：管理 NSG rules 与 `management_cidrs` 完全一致
 
 历史 R82 custom-image 记录已经分别观察到与 T14/T15 等价的 image/Plan 和 Gaia 字段；
 T16 是之后新增的显式测试，未在同一次历史 R82 custom-image 运行中采集，因此本文不把
-它伪记为 PASS。新部署应使用当前脚本重新生成完整 T01-T16 evidence：
+它伪记为 PASS。新部署应使用当前第二阶段入口重新生成完整 T01-T17 evidence：
 
 ```bash
-export CHECKPOINT_RECONCILE_SSH_RULE=true
-./scripts/run-tests.sh
+./scripts/validate-existing.sh \
+  --outputs-file .local/latest-deployment-outputs.json \
+  --expected-release R82
 ```
 
+如果第一阶段只完成基础部署，在 BYOL 激活后增加 `--configure-policy`，由第二阶段创建
+R82 policy、自动配置 HTTPS Inspection，再执行完整测试。报告保存在独立 evidence 目录：
+`report.md` 包含配置、每项真实输出和完整命令 trace，`summary.json` 提供机器可读结果。
 `FAIL` 或 `PENDING_INGESTION` 都返回非零；只有明确未启用的功能记录 `SKIP`。
 
 ## 7. 可选 T13 入站 DNAT
