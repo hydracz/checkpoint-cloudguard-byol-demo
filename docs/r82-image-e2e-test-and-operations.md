@@ -250,7 +250,8 @@ T16 是之后新增的显式测试，未在同一次历史 R82 custom-image 运�
 
 如果第一阶段只完成基础部署，在 BYOL 激活后增加 `--configure-policy`，由第二阶段创建
 R82 policy、自动配置 HTTPS Inspection，再执行完整测试。报告保存在独立 evidence 目录：
-`report.md` 包含配置、每项真实输出和完整命令 trace，`summary.json` 提供机器可读结果。
+`report.html` 包含配置、Firewall rules、测试机器、具体命令、实际结果和 Firewall action
+日志，不包含脚本执行过程；`summary.json` 提供机器可读结果。
 `FAIL` 或 `PENDING_INGESTION` 都返回非零；只有明确未启用的功能记录 `SKIP`。
 
 ## 7. 可选 T13 入站 DNAT

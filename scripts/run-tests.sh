@@ -112,7 +112,7 @@ if [[ -z "$OUT" ]]; then
 elif [[ "$OUT" != /* ]]; then
   OUT="$PWD/$OUT"
 fi
-[[ ! -e "$OUT/results.tsv" && ! -e "$OUT/report.md" ]] ||
+[[ ! -e "$OUT/results.tsv" && ! -e "$OUT/report.html" ]] ||
   die "Output directory already contains validation results: $OUT"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -384,7 +384,7 @@ while true; do
   if az monitor log-analytics query \
     --subscription "$SUBSCRIPTION" \
     --workspace "$WORKSPACE" \
-    --analytics-query "Syslog | where TimeGenerated > ago(2h) | where SyslogMessage has_any ('Check Point', 'action', 'product') | take 20" \
+    --analytics-query "Syslog | where TimeGenerated > ago(2h) | where SyslogMessage contains 'action=\"Accept\"' or SyslogMessage contains 'action=\"Drop\"' or SyslogMessage contains 'rule_action=\"Accept\"' or SyslogMessage contains 'rule_action=\"Drop\"' | project TimeGenerated, Computer, HostName, SeverityLevel, SyslogMessage | order by TimeGenerated desc | take 50" \
     -o json >"$logs_evidence" 2>&1 &&
     jq -e '
       if type == "array" then length > 0
@@ -475,8 +475,8 @@ python3 "$ROOT/scripts/render-test-report.py" \
   --evidence-dir "$OUT" \
   --exit-code "$validation_exit_code"
 
-echo "Evidence written to $OUT/report.md and $OUT/summary.json."
+echo "Evidence written to $OUT/report.html and $OUT/summary.json."
 if ((validation_exit_code != 0)); then
-  echo "One or more required tests did not pass. See $OUT/report.md." >&2
+  echo "One or more required tests did not pass. See $OUT/report.html." >&2
   exit "$validation_exit_code"
 fi

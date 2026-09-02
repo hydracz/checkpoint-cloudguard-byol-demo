@@ -409,8 +409,9 @@ Azure CLI 身份，不依赖原 Terraform state。
 
 如果 policy 已由第一阶段或人工流程配置，去掉 `--configure-policy`，脚本只执行验证。
 仅在测试订阅会删除 TCP/22 rule 时，额外设置
-`CHECKPOINT_RECONCILE_SSH_RULE=true`。生成目录中的 `report.md` 包含部署配置、结果表、
-每项原始命令输出和完整 `bash -x` 命令 trace；`summary.json` 与
+`CHECKPOINT_RECONCILE_SSH_RULE=true`。生成目录中的 `report.html` 包含部署配置、
+Firewall rules、结果表、每项测试的执行机器、具体命令、实际观察和 Firewall 日志；
+脚本 trace 不进入客户报告。`summary.json` 与
 `configuration.json` 便于机器归档。任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；
 只有未启用功能可记录 `SKIP`。T17 额外验证 4 条管理 NSG rules 的 source prefixes 与
 `management_cidrs` 完全一致。

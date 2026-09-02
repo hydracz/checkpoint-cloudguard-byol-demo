@@ -76,7 +76,7 @@ if [[ -z "$OUTPUT_DIR" ]]; then
 elif [[ "$OUTPUT_DIR" != /* ]]; then
   OUTPUT_DIR="$PWD/$OUTPUT_DIR"
 fi
-[[ ! -e "$OUTPUT_DIR/results.tsv" && ! -e "$OUTPUT_DIR/report.md" ]] ||
+[[ ! -e "$OUTPUT_DIR/results.tsv" && ! -e "$OUTPUT_DIR/report.html" ]] ||
   die "Output directory already contains validation results: $OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
@@ -137,6 +137,18 @@ if $CONFIGURE_POLICY; then
   set -e
   if ((validation_exit_code != 0)); then
     echo "Policy configuration failed; generating a failure report." >&2
+  else
+    if [[ -f "$LOCAL_DIR/checkpoint-policy-output.txt" ]]; then
+      cp "$LOCAL_DIR/checkpoint-policy-output.txt" \
+        "$OUTPUT_DIR/firewall-configuration-output.txt"
+    elif [[ -f "$LOCAL_DIR/checkpoint-policy-run-command.json" ]]; then
+      cp "$LOCAL_DIR/checkpoint-policy-run-command.json" \
+        "$OUTPUT_DIR/firewall-configuration-output.json"
+    fi
+    if [[ -f "$LOCAL_DIR/checkpoint-policy-stderr.log" ]]; then
+      cp "$LOCAL_DIR/checkpoint-policy-stderr.log" \
+        "$OUTPUT_DIR/firewall-configuration-log.txt"
+    fi
   fi
 fi
 
@@ -161,6 +173,6 @@ python3 "$ROOT/scripts/render-test-report.py" \
   --evidence-dir "$OUTPUT_DIR" \
   --exit-code "$validation_exit_code"
 
-echo "Stage-two report: $OUTPUT_DIR/report.md"
+echo "Stage-two report: $OUTPUT_DIR/report.html"
 echo "Machine-readable summary: $OUTPUT_DIR/summary.json"
 exit "$validation_exit_code"

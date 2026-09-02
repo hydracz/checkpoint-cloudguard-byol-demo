@@ -194,6 +194,11 @@ if [[ "$transport" == "auto" ]] && ! $use_ssh; then
   echo "The ${readiness_description} was unavailable over SSH; falling back to Azure VM Run Command."
 fi
 
+rm -f \
+  "$LOCAL_DIR/checkpoint-policy-output.txt" \
+  "$LOCAL_DIR/checkpoint-policy-stderr.log" \
+  "$LOCAL_DIR/checkpoint-policy-run-command.json"
+
 if $use_ssh; then
   echo "Configuring the Check Point gateway over Gaia SSH as admin."
   if ! ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" bash -s -- "${policy_args[@]}" \

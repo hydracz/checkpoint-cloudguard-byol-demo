@@ -451,14 +451,17 @@ R81 已通过 SmartConsole 启用 TLS 时，同时传入
 
 每次运行生成独立的 `evidence/<UTC_TIMESTAMP>-stage2/`：
 
-- `report.md`：配置详情、结果表、每项真实输出和完整 Bash 命令 trace。
+- `report.html`：面向客户的单文件报告，包含配置、Firewall rules、结果汇总、每项测试的
+  执行机器、具体命令、实际观察结果和 Firewall action 日志。
 - `summary.json` / `configuration.json`：便于自动归档和后续处理的结构化结果。
 - `T*.json` / `T*.txt`：Azure、Gaia、Management API 和真实流量命令的原始输出。
-- `commands.log`：`bash -x` 捕获的实际展开命令；`run-tests.log` 保存测试入口输出。
+- `commands.log`、`run-tests.log`、`configure-policy.log`：仅供工程排障保留，不写入客户 HTML 报告。
 
 报告包含客户订阅、IP、资源名、策略与流量原始输出，应按客户敏感资料保存；脚本会从
 `deployment-outputs.json` 中删除 Terraform 标记为 sensitive 的 output，并避免把整份原始
-outputs 展开到命令 trace。
+outputs 展开到调试 trace。用浏览器直接打开 `report.html` 即可阅读或打印为 PDF。
+R81 的 T07 为 SKIP 时，HTML 会直接给出 BYOL/SmartConsole 前置条件、HTTPS Inspection
+rulebase 配置、public CA 导出、tfvars 更新和 `--ca-file` 重跑步骤。
 
 报告覆盖：
 

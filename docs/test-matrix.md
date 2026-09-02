@@ -27,8 +27,9 @@
 ```
 
 已有部署推荐运行 `scripts/validate-existing.sh`；它可以读取第一阶段保存的
-`.local/latest-deployment-outputs.json`，同时生成 `report.md`、`summary.json`、
-逐项原始证据和完整 Bash 命令 trace。
+`.local/latest-deployment-outputs.json`，同时生成面向客户的 `report.html`、
+机器可读 `summary.json` 和逐项原始证据。HTML 只显示环境、Firewall 配置、测试机器、
+具体命令、实际结果和 Firewall action 日志；脚本 trace 仅作为独立排障文件保留。
 
 `summary.json` 原样记录 `SKIP`、`RECONCILED` 和 `PENDING_INGESTION`。`RECONCILED`
 表示测试期间临时恢复了随后删除的 SSH rule，不会伪记为普通 PASS。脚本默认等待日志摄取最多
