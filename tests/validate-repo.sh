@@ -24,6 +24,7 @@ required=(
   scripts/lock-worm.sh scripts/destroy.sh
   docs/architecture.md docs/drawio-architecture.md docs/network-ip-plan.md
   docs/cloudguard-image-export.md
+  docs/post-deployment-validation.md
   docs/r81-image-e2e-test-and-operations.md
   docs/r82-image-e2e-test-and-operations.md
   docs/validated-results.md
@@ -108,6 +109,8 @@ grep -q 'nameopt RFC2253' "$ROOT/scripts/run-tests.sh"
 grep -q '"arg4=\$EXPECTED_CA_ISSUER_ARG"' "$ROOT/scripts/run-tests.sh"
 grep -q '15 PASS / 1 SKIP' "$ROOT/docs/r81-image-e2e-test-and-operations.md"
 grep -q '12 PASS / 1 SKIP' "$ROOT/docs/r82-image-e2e-test-and-operations.md"
+grep -q 'validate-existing.sh' "$ROOT/docs/post-deployment-validation.md"
+grep -q 'report.html' "$ROOT/docs/post-deployment-validation.md"
 grep -q 'scheme="http"' "$ROOT/scripts/vm-case.sh"
 ! grep -q '"${var_args\[@\]}"' "$ROOT/scripts/deploy.sh"
 ! grep -q '"${args\[@\]}"' "$ROOT/scripts/plan.sh" "$ROOT/scripts/destroy.sh"

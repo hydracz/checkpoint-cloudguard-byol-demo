@@ -85,6 +85,7 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
 [技术要求映射](docs/requirement-mapping.md)、[网络与 IP 规划](docs/network-ip-plan.md)、
 [CloudGuard 镜像导出与创建](docs/cloudguard-image-export.md)、
 [可选：从本地 tar.gz 发布 Azure Compute Gallery 镜像](docs/upload-vhd-to-compute-gallery.md)、
+[已部署环境的独立自动测试步骤](docs/post-deployment-validation.md)、
 [R81 无 Plan 镜像端到端测试与操作](docs/r81-image-e2e-test-and-operations.md)、
 [R82 有 Plan 镜像端到端测试与操作](docs/r82-image-e2e-test-and-operations.md)、
 [现场验证记录](docs/validated-results.md) 和 [draw.io 架构图说明](docs/drawio-architecture.md)。
@@ -419,6 +420,9 @@ printf '%s\n' "$URL"
 资源会继续计费。
 
 ### 3. 对已部署系统执行第二阶段自动测试
+
+完整独立步骤见
+[已部署环境的独立自动测试步骤](docs/post-deployment-validation.md)。
 
 第一阶段完成基础设施部署后，不需要重新执行 `terraform apply`。如果 Gateway 策略已经配置，
 直接针对第一阶段输出运行只读验证；`--expected-release R81` 可防止误测其他版本：
