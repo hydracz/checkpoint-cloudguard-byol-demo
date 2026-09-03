@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib.sh"
 
 VAR_FILE=""
-SKIP_POLICY=false
+ENABLE_AUDIT_EXPORT=false
 LOCK_WORM=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,16 +15,17 @@ while [[ $# -gt 0 ]]; do
       VAR_FILE="$(resolve_var_file "$2")"
       shift 2
       ;;
-    --skip-policy)
-      SKIP_POLICY=true
+    --enable-audit-export)
+      ENABLE_AUDIT_EXPORT=true
       shift
       ;;
     --lock-worm)
       LOCK_WORM=true
+      ENABLE_AUDIT_EXPORT=true
       shift
       ;;
     *)
-      die "Usage: $0 [--var-file FILE] [--skip-policy] [--lock-worm]"
+      die "Usage: $0 [--var-file FILE] [--enable-audit-export] [--lock-worm]"
       ;;
   esac
 done
@@ -67,18 +68,14 @@ else
   "$ROOT/scripts/plan.sh"
 fi
 "$TERRAFORM" -chdir="$INFRA" apply -input=false -auto-approve -parallelism="$TF_PARALLELISM" "$LOCAL_DIR/plan.tfplan"
-"$TERRAFORM" -chdir="$INFRA" output -json >"$LOCAL_DIR/latest-deployment-outputs.json"
+write_terraform_outputs
 
-if $SKIP_POLICY; then
-  CHECKPOINT_SKIP_POLICY_CONFIGURATION=true "$ROOT/scripts/configure-policy.sh"
-else
-  "$ROOT/scripts/configure-policy.sh"
-fi
-
-if [[ -n "$VAR_FILE" ]]; then
-  "$ROOT/scripts/enable-audit-export.sh" --var-file "$VAR_FILE"
-else
-  "$ROOT/scripts/enable-audit-export.sh"
+if $ENABLE_AUDIT_EXPORT; then
+  if [[ -n "$VAR_FILE" ]]; then
+    "$ROOT/scripts/enable-audit-export.sh" --var-file "$VAR_FILE"
+  else
+    "$ROOT/scripts/enable-audit-export.sh"
+  fi
 fi
 
 if $LOCK_WORM; then
@@ -86,3 +83,4 @@ if $LOCK_WORM; then
 fi
 
 echo "Deployment complete. Outputs: $LOCAL_DIR/latest-deployment-outputs.json"
+echo "No Check Point policy or Gaia post-deployment automation was run."

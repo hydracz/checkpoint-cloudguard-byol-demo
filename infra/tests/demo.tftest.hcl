@@ -4,15 +4,19 @@ mock_provider "random" {}
 override_module {
   target = module.checkpoint
   outputs = {
-    resource_group_name         = "rg-checkpoint-mock"
-    resource_group_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock"
-    vnet_name                   = "checkpoint-mock-hub-vnet"
-    vnet_id                     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet"
-    vm_name                     = "checkpoint-mock-gateway"
-    nsg_id                      = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/networkSecurityGroups/rg-checkpoint-mock-nsg"
-    public_ip_address           = "198.51.100.20"
-    frontend_private_ip_address = "10.60.0.4"
-    backend_private_ip_address  = "10.60.1.4"
+    resource_group_name           = "rg-checkpoint-mock"
+    resource_group_id             = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock"
+    vnet_name                     = "checkpoint-mock-hub-vnet"
+    vnet_id                       = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet"
+    vm_name                       = "checkpoint-mock-gateway"
+    nsg_id                        = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/networkSecurityGroups/rg-checkpoint-mock-nsg"
+    management_nsg_id             = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/networkSecurityGroups/rg-checkpoint-mock-management-nsg"
+    management_subnet_id          = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet/subnets/management"
+    management_nic_id             = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/networkInterfaces/checkpoint-mock-gateway-management"
+    public_ip_address             = "198.51.100.20"
+    management_private_ip_address = "10.60.3.4"
+    frontend_private_ip_address   = "10.60.0.4"
+    backend_private_ip_address    = "10.60.1.4"
   }
 }
 
@@ -38,22 +42,25 @@ run "default_demo_plan" {
   }
 
   assert {
-    condition     = length(local.checkpoint_security_rules) == 6
-    error_message = "The default gateway NSG must contain six rules."
+    condition = (
+      length(local.checkpoint_security_rules) == 2 &&
+      length(local.checkpoint_management_security_rules) == 5
+    )
+    error_message = "The default gateway must separate two data-plane rules from five private management rules."
   }
 
   assert {
     condition = (
       length(local.management_cidrs) == 1 &&
-      local.management_cidrs[0] == "0.0.0.0/0" &&
-      local.primary_management_cidr == "0.0.0.0/0" &&
+      local.management_cidrs[0] == "10.60.3.0/24" &&
+      local.primary_management_cidr == "10.60.3.0/24" &&
       alltrue([
-        for rule in local.checkpoint_management_security_rules :
+        for rule in local.checkpoint_management_allow_rules :
         length(rule.source_address_prefixes) == 1 &&
-        rule.source_address_prefixes[0] == "0.0.0.0/0"
+        rule.source_address_prefixes[0] == "10.60.3.0/24"
       ])
     )
-    error_message = "Omitting management_cidrs must allow administrator access from any IPv4 address."
+    error_message = "Omitting management_cidrs must restrict administration to the private management subnet."
   }
 
   assert {
@@ -90,6 +97,21 @@ run "default_demo_plan" {
     ])
     error_message = "Spoke-to-hub peerings must depend on the module-created hub VNet ID."
   }
+
+  assert {
+    condition = (
+      length(azurerm_windows_virtual_machine.management) == 1 &&
+      length(azurerm_bastion_host.management) == 1 &&
+      azurerm_subnet.azure_bastion[0].name == "AzureBastionSubnet" &&
+      azurerm_network_interface.windows_client[0].ip_configuration[0].subnet_id == module.checkpoint.management_subnet_id &&
+      azurerm_network_interface.windows_client[0].ip_configuration[0].private_ip_address == "10.60.3.10" &&
+      azurerm_network_interface.windows_client[0].ip_configuration[0].public_ip_address_id == null &&
+      azurerm_bastion_host.management[0].sku == "Basic" &&
+      azurerm_windows_virtual_machine.management[0].admin_username == "azureadmin" &&
+      azurerm_windows_virtual_machine.management[0].size == "Standard_D4ls_v6"
+    )
+    error_message = "The default deployment must include a private Windows management workstation and Basic Azure Bastion."
+  }
 }
 
 run "multiple_management_cidrs" {
@@ -111,22 +133,56 @@ run "multiple_management_cidrs" {
 
   assert {
     condition = (
-      length(local.management_cidrs) == 2 &&
-      length(local.checkpoint_management_security_rules) == 4 &&
-      length(local.checkpoint_security_rules) == 6 &&
-      local.checkpoint_management_security_rules[0].name == "AllowRestrictedSSH" &&
-      local.checkpoint_management_security_rules[0].priority == "100" &&
-      local.checkpoint_management_security_rules[3].name == "AllowRestrictedSmartConsole19009" &&
+      length(local.management_cidrs) == 3 &&
+      length(local.checkpoint_management_allow_rules) == 4 &&
+      length(local.checkpoint_management_security_rules) == 5 &&
+      length(local.checkpoint_security_rules) == 2 &&
+      local.checkpoint_management_allow_rules[0].name == "AllowRestrictedSSH" &&
+      local.checkpoint_management_allow_rules[0].priority == "100" &&
+      local.checkpoint_management_allow_rules[3].name == "AllowRestrictedSmartConsole19009" &&
       alltrue([
-        for rule in local.checkpoint_management_security_rules :
+        for rule in local.checkpoint_management_allow_rules :
         try(rule.source_address_prefix, null) == null &&
         toset(rule.source_address_prefixes) == toset([
           "203.0.113.10/32",
           "198.51.100.0/24",
+          "10.60.3.0/24",
         ])
       ])
     )
-    error_message = "Each administrator service must use one deterministic rule containing all management CIDRs."
+    error_message = "Each administrator service must include public operators and the private Windows client subnet."
+  }
+}
+
+run "management_workstation_disabled" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    management_cidrs               = ["203.0.113.10/32"]
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+    enable_management_workstation  = false
+  }
+
+  assert {
+    condition = (
+      length(azurerm_windows_virtual_machine.management) == 0 &&
+      length(azurerm_bastion_host.management) == 0 &&
+      length(local.management_cidrs) == 2 &&
+      toset(local.management_cidrs) == toset([
+        "10.60.3.0/24",
+        "203.0.113.10/32",
+      ])
+    )
+    error_message = "Disabling the workstation must retain the gateway's private management subnet and remove only Windows/Bastion resources."
   }
 }
 
@@ -348,7 +404,7 @@ run "restricted_inbound_plan" {
   }
 
   assert {
-    condition     = length(local.checkpoint_security_rules) == 7
+    condition     = length(local.checkpoint_security_rules) == 3
     error_message = "Enabling inbound demo must add exactly one source-restricted gateway NSG rule."
   }
 

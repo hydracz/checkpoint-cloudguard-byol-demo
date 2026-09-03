@@ -380,3 +380,17 @@ terraform_console_value() {
 terraform_output_raw() {
   "$TERRAFORM" -chdir="$INFRA" output -raw "$1"
 }
+
+write_terraform_outputs() {
+  local destination="${1:-$LOCAL_DIR/latest-deployment-outputs.json}"
+  local temporary_file="${destination}.tmp.$$"
+
+  mkdir -p "$(dirname "$destination")"
+  umask 077
+  if ! "$TERRAFORM" -chdir="$INFRA" output -json >"$temporary_file"; then
+    rm -f "$temporary_file"
+    die "Failed to write Terraform outputs."
+  fi
+  chmod 600 "$temporary_file"
+  mv "$temporary_file" "$destination"
+}

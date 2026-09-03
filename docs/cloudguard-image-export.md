@@ -322,9 +322,10 @@ name      = mgmt-byol
 1. Terraform preflight 识别 image 为 `Generalized`、Linux、x64、Gen1，并确认目标区域副本。
 2. VM 的 image reference 是指定 Gallery ID，同时 VM plan 仍为 `mgmt-byol`。
 3. Gaia 首次 provisioning 完成，使用本次输入的 SSH key 登录 `admin`。
-4. hostname、两块 NIC IP 和 SSH host keys 属于新 VM。
-5. `notused` 占位用户不存在，`admin` 密码未启用。
-6. Management API 可用，Access Policy 可以发布并安装。
+4. hostname、三块 NIC IP（`eth0` management、`eth1` frontend、`eth2` backend）
+   和 SSH host keys 属于新 VM。
+5. `notused` 只是 Azure metadata 占位；`admin` 密码和 SSH key 能从 management subnet 使用。
+6. Management API 可用；Access Policy 由 SmartConsole 手工发布并安装，或以后从私网显式运行保留脚本。
 7. 两个 workload 的有效路由指向新 Gateway backend IP。
 8. 允许、阻断、HTTPS Inspection、Geo-IP 和东西向测试符合预期。
 9. Log Exporter、Log Analytics 和未锁定的 Immutability Policy 状态正确。
@@ -332,18 +333,18 @@ name      = mgmt-byol
 执行：
 
 ```bash
+./scripts/test.sh
 ./scripts/preflight.sh --var-file configs/demo.tfvars
 ./scripts/deploy.sh --var-file configs/demo.tfvars
-./scripts/run-tests.sh
+# 通过 Bastion/Windows 完成 Gaia 和 SmartConsole 配置后：
+./scripts/validate-existing.sh
 ```
 
-保持默认 `CHECKPOINT_TRANSPORT=auto`。它会使用自动生成的
-`.local/checkpoint-demo-ssh`，并在当前出口位于 `management_cidrs` 首项时优先使用
-受限 SSH；不要仅为了 custom image 强制选择 `run-command`。Gaia FTW 会在首次启动中
-重启，Azure Run Command extension 如果恰好跨越该窗口，可能无法完成安装。
+如需保留的自动化，执行机必须能访问 `checkpoint_management_private_ip`，再使用
+`CHECKPOINT_TRANSPORT=ssh ./scripts/configure-policy.sh`。Gateway Public IP 不接受 SSH。
 
 `PENDING_INGESTION` 不是通过；等待 Log Analytics 完成 ingestion 后重新执行
-`run-tests.sh`。
+`validate-existing.sh`（或直接执行底层 `run-tests.sh`）。
 
 ## 8. 删除中间资源
 

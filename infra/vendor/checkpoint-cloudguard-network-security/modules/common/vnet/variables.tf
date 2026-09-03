@@ -53,8 +53,8 @@ variable "subnet_names" {
   default     = ["Frontend", "Backend"]
 
   validation {
-    condition     = length(var.subnet_names) <= 2 && length(var.subnet_names) >= 1
-    error_message = "At least one subnet is required and a maximum of two subnets are supported."
+    condition     = length(var.subnet_names) <= 3 && length(var.subnet_names) >= 1
+    error_message = "At least one subnet is required and a maximum of three subnets are supported."
   }
 }
 

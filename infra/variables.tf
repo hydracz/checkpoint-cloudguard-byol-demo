@@ -88,18 +88,14 @@ variable "remote_location" {
 }
 
 variable "management_cidrs" {
-  description = "Public administrator CIDRs allowed to reach SSH, Gaia Portal, and SmartConsole. Defaults to all IPv4 addresses when omitted; put the deployment operator's CIDR first when restricting access."
+  description = "Additional trusted private/VPN administrator CIDRs allowed to reach the dedicated management NIC. The management subnet is always included automatically."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 
   validation {
     condition = (
-      length(var.management_cidrs) > 0 &&
-      length(var.management_cidrs) <= 50 &&
-      (
-        !contains(var.management_cidrs, "0.0.0.0/0") ||
-        length(var.management_cidrs) == 1
-      ) &&
+      length(var.management_cidrs) <= 49 &&
+      !contains(var.management_cidrs, "0.0.0.0/0") &&
       alltrue([
         for cidr in var.management_cidrs :
         try(
@@ -111,7 +107,7 @@ variable "management_cidrs" {
         )
       ])
     )
-    error_message = "management_cidrs must contain 1-50 canonical IPv4 networks with /0-/32 prefixes; use /32 for one IP, and use 0.0.0.0/0 only as the sole entry."
+    error_message = "management_cidrs must contain at most 49 canonical IPv4 networks with /1-/32 prefixes; 0.0.0.0/0 is not allowed."
   }
 }
 
@@ -239,6 +235,51 @@ variable "collector_vm_size" {
   default     = "Standard_D4ls_v6"
 }
 
+variable "enable_management_workstation" {
+  description = "Deploy a private Windows Server workstation and Basic Azure Bastion in the Check Point hub VNet for future SmartConsole use."
+  type        = bool
+  default     = true
+}
+
+variable "windows_client_vm_size" {
+  description = "Size of the Windows Server management workstation. Standard_D4ls_v6 provides 4 vCPU and 8 GiB."
+  type        = string
+  default     = "Standard_D4ls_v6"
+}
+
+variable "windows_client_admin_username" {
+  description = "Local administrator account for the Windows management workstation."
+  type        = string
+  default     = "azureadmin"
+
+  validation {
+    condition     = can(regex("^[A-Za-z][A-Za-z0-9._-]{2,19}$", var.windows_client_admin_username))
+    error_message = "windows_client_admin_username must be 3-20 characters, start with a letter, and contain only letters, digits, period, underscore, or hyphen."
+  }
+}
+
+variable "windows_client_admin_password" {
+  description = "Optional Windows administrator password. Leave empty to generate one; retrieve it with 'terraform -chdir=infra output -raw windows_client_admin_password'."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition = var.windows_client_admin_password == "" || (
+      length(var.windows_client_admin_password) >= 12 &&
+      length(var.windows_client_admin_password) <= 123 &&
+      length(regexall("[\r\n]", var.windows_client_admin_password)) == 0 &&
+      length(compact([
+        can(regex("[a-z]", var.windows_client_admin_password)) ? "lower" : "",
+        can(regex("[A-Z]", var.windows_client_admin_password)) ? "upper" : "",
+        can(regex("[0-9]", var.windows_client_admin_password)) ? "number" : "",
+        can(regex("[^A-Za-z0-9]", var.windows_client_admin_password)) ? "special" : "",
+      ])) >= 3
+    )
+    error_message = "windows_client_admin_password must be empty or 12-123 characters with at least three of lowercase, uppercase, number, and special characters, and no newline."
+  }
+}
+
 variable "workload_admin_username" {
   description = "Linux account used by the Ubuntu test VMs."
   type        = string
@@ -281,6 +322,28 @@ variable "collector_subnet_prefix" {
   validation {
     condition     = can(cidrnetmask(var.collector_subnet_prefix)) && endswith(var.collector_subnet_prefix, "/24")
     error_message = "collector_subnet_prefix must be a valid IPv4 /24."
+  }
+}
+
+variable "management_subnet_prefix" {
+  description = "Private subnet shared by the Check Point eth0 management NIC and Windows management workstation."
+  type        = string
+  default     = "10.60.3.0/24"
+
+  validation {
+    condition     = can(cidrnetmask(var.management_subnet_prefix)) && endswith(var.management_subnet_prefix, "/24")
+    error_message = "management_subnet_prefix must be a valid IPv4 /24."
+  }
+}
+
+variable "bastion_subnet_prefix" {
+  description = "Dedicated AzureBastionSubnet prefix in the Check Point hub VNet."
+  type        = string
+  default     = "10.60.4.0/26"
+
+  validation {
+    condition     = can(cidrnetmask(var.bastion_subnet_prefix)) && endswith(var.bastion_subnet_prefix, "/26")
+    error_message = "bastion_subnet_prefix must be a valid IPv4 /26."
   }
 }
 
@@ -343,15 +406,15 @@ variable "policy_package_name" {
 }
 
 variable "skip_policy_configuration" {
-  description = "Skip all Check Point Management API policy/object/rule automation while retaining Gaia routing, management-client, and Log Exporter configuration."
+  description = "When the optional configure-policy.sh script is run, skip Management API objects, rules, and policy installation while retaining Gaia routes, GUI clients, and Log Exporter configuration."
   type        = bool
   default     = true
 }
 
 variable "enable_tls_inspection" {
-  description = "Generate a demo outbound CA, install HTTPS inspection policy, and trust the public CA on both demo workloads."
+  description = "Enable TLS inspection in the optional post-deployment policy automation. The infrastructure-only deployment ignores this setting."
   type        = bool
-  default     = true
+  default     = false
 
   validation {
     condition = (

@@ -23,4 +23,13 @@ run "r81_planless_full_module_plan" {
     condition     = local.checkpoint_offer == "cgi-mgmt-r81" && !local.checkpoint_source_requires_plan
     error_message = "The complete Check Point module must accept the R81 planless image branch."
   }
+
+  assert {
+    condition = (
+      module.checkpoint.management_private_ip_address == "10.60.3.4" &&
+      module.checkpoint.frontend_private_ip_address == "10.60.0.4" &&
+      module.checkpoint.backend_private_ip_address == "10.60.1.4"
+    )
+    error_message = "R81 must use eth0 management, eth1 frontend, and eth2 backend private addresses."
+  }
 }

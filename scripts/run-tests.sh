@@ -48,9 +48,12 @@ SUBSCRIPTION="$(output_value subscription_id)"
 COMPANY_DOMAIN="$(output_value company_domain)"
 RG="$(output_value resource_group_name)"
 GATEWAY_VM="$(output_value checkpoint_vm_name)"
-GATEWAY_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
+MANAGEMENT_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_management_nsg_id.value // ""')"
+MANAGEMENT_NIC_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_management_nic_id.value // ""')"
+DATA_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
 PACKAGE_NAME="$(output_value policy_package_name)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
+MANAGEMENT_IP="$(output_value checkpoint_management_private_ip)"
 R81_TLS_MANUAL="$(printf '%s' "$outputs" | jq -r '.r81_tls_manually_configured.value // false')"
 EU_VM="$(output_value eu_workload_vm_name)"
 REMOTE_VM="$(output_value remote_workload_vm_name)"
@@ -151,7 +154,7 @@ record() {
 ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$DEFAULT_SSH_PRIVATE_KEY}"
 if [[ "$RECONCILE_SSH_RULE" == "true" ]]; then
   trap remove_temporary_restricted_ssh_nsg_rule EXIT
-  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
+  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$MANAGEMENT_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
 fi
 metadata_tmp="$OUT/validation-metadata.json.tmp"
 jq \
@@ -178,6 +181,11 @@ matches = [
 ]
 raise SystemExit(0 if matches else 1)
 PY
+}
+
+validate_no_public_management_rules() {
+  local evidence="$1"
+  python3 "$ROOT/scripts/validate-data-nsg.py" "$evidence"
 }
 
 for route_case in "T01:$EU_NIC" "T02:$REMOTE_NIC"; do
@@ -230,12 +238,25 @@ else
 fi
 
 management_nsg_evidence="$OUT/T17-management-nsg-rules.json"
-management_nsg_name="${GATEWAY_NSG_ID##*/}"
+management_nic_evidence="$OUT/T17-management-nic.json"
+data_nsg_evidence="$OUT/T17-data-plane-nsg-rules.json"
+management_nsg_name="${MANAGEMENT_NSG_ID##*/}"
+data_nsg_name="${DATA_NSG_ID##*/}"
 if az network nsg rule list \
   --subscription "$SUBSCRIPTION" \
   --resource-group "$RG" \
   --nsg-name "$management_nsg_name" \
   -o json >"$management_nsg_evidence" 2>&1 &&
+  az network nic show \
+    --subscription "$SUBSCRIPTION" \
+    --ids "$MANAGEMENT_NIC_ID" \
+    --query '{id:id,networkSecurityGroup:networkSecurityGroup,ipConfigurations:ipConfigurations}' \
+    -o json >"$management_nic_evidence" 2>&1 &&
+  az network nsg rule list \
+    --subscription "$SUBSCRIPTION" \
+    --resource-group "$RG" \
+    --nsg-name "$data_nsg_name" \
+    -o json >"$data_nsg_evidence" 2>&1 &&
   jq -e \
     --argjson cidrs "$MANAGEMENT_CIDRS_JSON" '
       def sources:
@@ -260,9 +281,24 @@ if az network nsg rule list \
         (.protocol | ascii_downcase) == "tcp" and
         .destinationPortRange == $expected[.name] and
         (sources | sort) == ($cidrs | sort)
+      ) and
+      any(.[];
+        .name == "DenyOtherVnetManagement" and
+        .direction == "Inbound" and
+        .access == "Deny" and
+        .priority == 200 and
+        (sources | sort) == ["VirtualNetwork"]
       )
     ' "$management_nsg_evidence" >/dev/null; then
-  if [[ "$RESTRICTED_SSH_RULE_CREATED" == "true" ]]; then
+  if ! jq -e \
+      --arg management_nsg_id "$MANAGEMENT_NSG_ID" '
+        (.networkSecurityGroup.id | ascii_downcase) ==
+        ($management_nsg_id | ascii_downcase) and
+        all(.ipConfigurations[]?; (.publicIPAddress // null) == null)
+      ' "$management_nic_evidence" >/dev/null ||
+    ! validate_no_public_management_rules "$data_nsg_evidence"; then
+    record T17 FAIL "$(basename "$management_nsg_evidence")"
+  elif [[ "$RESTRICTED_SSH_RULE_CREATED" == "true" ]]; then
     record T17 RECONCILED "$(basename "$management_nsg_evidence")"
   else
     record T17 PASS "$(basename "$management_nsg_evidence")"
@@ -330,7 +366,7 @@ if [[ -f "$ssh_key" ]] &&
     -o ServerAliveInterval=15 \
     -o StrictHostKeyChecking=accept-new \
     -o "UserKnownHostsFile=$LOCAL_DIR/known_hosts" \
-    "admin@$PUBLIC_IP" bash -s -- "$PACKAGE_NAME" "$CHECKPOINT_RELEASE" \
+    "admin@$MANAGEMENT_IP" bash -s -- "$PACKAGE_NAME" "$CHECKPOINT_RELEASE" \
     <"$ROOT/scripts/inspect-checkpoint.sh" \
     >"$policy_evidence" 2>&1; then
   gateway_inspected=true

@@ -29,9 +29,19 @@ module "network_security_group" {
   source              = "../common/network-security-group"
   nsg_id              = var.nsg_id
   resource_group_name = module.common.resource_group_name
-  security_group_name = "${module.common.resource_group_name}-nsg"
+  security_group_name = "${var.single_gateway_name}-data-nsg"
   location            = module.common.resource_group_location
   security_rules      = var.security_rules
+  tags                = merge(lookup(var.tags, "network-security-group", {}), lookup(var.tags, "all", {}))
+}
+
+module "management_network_security_group" {
+  source              = "../common/network-security-group"
+  nsg_id              = var.management_nsg_id
+  resource_group_name = module.common.resource_group_name
+  security_group_name = "${var.single_gateway_name}-management-nsg"
+  location            = module.common.resource_group_location
+  security_rules      = var.management_security_rules
   tags                = merge(lookup(var.tags, "network-security-group", {}), lookup(var.tags, "all", {}))
 }
 
@@ -43,7 +53,8 @@ locals {
 
 module "vnet" {
   depends_on = [
-    module.network_security_group
+    module.network_security_group,
+    module.management_network_security_group,
   ]
   source                       = "../common/vnet"
   deployment_type              = "single"
@@ -53,7 +64,7 @@ module "vnet" {
   location                     = module.common.resource_group_location
   address_space                = var.address_space
   subnet_prefixes              = var.subnet_prefixes
-  subnet_names                 = [var.frontend_subnet_name, var.backend_subnet_name]
+  subnet_names                 = [var.frontend_subnet_name, var.backend_subnet_name, var.management_subnet_name]
   nsg_id                       = module.network_security_group.id
   enable_ipv6                  = var.enable_ipv6
   ipv6_address_space           = var.vnet_ipv6_address_space
@@ -174,12 +185,43 @@ resource "azurerm_network_interface_security_group_association" "security_group_
   network_security_group_id = module.network_security_group.id
 }
 
+resource "azurerm_network_interface_security_group_association" "management_security_group_association" {
+  depends_on = [
+    azurerm_network_interface.management,
+    module.management_network_security_group,
+  ]
+  network_interface_id      = azurerm_network_interface.management.id
+  network_security_group_id = module.management_network_security_group.id
+}
+
+resource "azurerm_network_interface" "management" {
+  depends_on = [
+    module.vnet,
+  ]
+  name                           = "${var.single_gateway_name}-management"
+  location                       = module.common.resource_group_location
+  resource_group_name            = module.common.resource_group_name
+  ip_forwarding_enabled          = false
+  accelerated_networking_enabled = true
+  edge_zone                      = local.edge_zone
+
+  ip_configuration {
+    name                          = "ipconfig1"
+    subnet_id                     = module.vnet.subnets[2]
+    private_ip_address_allocation = module.vnet.allocation_method
+    private_ip_address            = var.management_private_ip != "" ? var.management_private_ip : cidrhost(module.vnet.subnet_prefixes[2], var.management_private_ip_host)
+    primary                       = true
+  }
+
+  tags = merge(lookup(var.tags, "network-interface", {}), lookup(var.tags, "all", {}))
+}
+
 resource "azurerm_network_interface" "nic" {
   depends_on = [
     azurerm_public_ip.public_ip,
     module.vnet
   ]
-  name                           = "${var.single_gateway_name}-eth0"
+  name                           = "${var.single_gateway_name}-frontend"
   location                       = module.common.resource_group_location
   resource_group_name            = module.common.resource_group_name
   ip_forwarding_enabled          = true
@@ -188,7 +230,7 @@ resource "azurerm_network_interface" "nic" {
 
 
   ip_configuration {
-    name                          = "ipconfig1"
+    name                          = "ipconfig2"
     subnet_id                     = module.vnet.subnets[0]
     private_ip_address_allocation = module.vnet.allocation_method
     private_ip_address            = var.frontend_private_ip != "" ? var.frontend_private_ip : cidrhost(module.vnet.subnet_prefixes[0], var.frontend_private_ip_host)
@@ -199,7 +241,7 @@ resource "azurerm_network_interface" "nic" {
   dynamic "ip_configuration" {
     for_each = var.enable_ipv6 ? [1] : []
     content {
-      name                          = "ipconfig1-v6"
+      name                          = "ipconfig2-v6"
       subnet_id                     = module.vnet.subnets[0]
       private_ip_address_allocation = "Static"
       private_ip_address_version    = "IPv6"
@@ -213,7 +255,7 @@ resource "azurerm_network_interface" "nic" {
 resource "azurerm_network_interface_backend_address_pool_association" "nic_backend_pool_v6" {
   count                   = var.enable_ipv6 ? 1 : 0
   network_interface_id    = azurerm_network_interface.nic.id
-  ip_configuration_name   = "ipconfig1-v6"
+  ip_configuration_name   = "ipconfig2-v6"
   backend_address_pool_id = azurerm_lb_backend_address_pool.backend_pool_v6[0].id
 }
 
@@ -221,7 +263,7 @@ resource "azurerm_network_interface" "nic1" {
   depends_on = [
     module.vnet
   ]
-  name                           = "${var.single_gateway_name}-eth1"
+  name                           = "${var.single_gateway_name}-backend"
   location                       = module.common.resource_group_location
   resource_group_name            = module.common.resource_group_name
   ip_forwarding_enabled          = true
@@ -230,7 +272,7 @@ resource "azurerm_network_interface" "nic1" {
 
 
   ip_configuration {
-    name                          = "ipconfig2"
+    name                          = "ipconfig3"
     subnet_id                     = module.vnet.subnets[1]
     private_ip_address_allocation = module.vnet.allocation_method
     private_ip_address            = var.backend_private_ip != "" ? var.backend_private_ip : cidrhost(module.vnet.subnet_prefixes[1], var.backend_private_ip_host)
@@ -240,7 +282,7 @@ resource "azurerm_network_interface" "nic1" {
   dynamic "ip_configuration" {
     for_each = var.enable_ipv6 ? [1] : []
     content {
-      name                          = "ipconfig2-v6"
+      name                          = "ipconfig3-v6"
       subnet_id                     = module.vnet.subnets[1]
       private_ip_address_allocation = "Static"
       private_ip_address_version    = "IPv6"
@@ -283,6 +325,7 @@ moved {
 
 resource "azurerm_virtual_machine" "single_gateway_vm_instance" {
   depends_on = [
+    azurerm_network_interface.management,
     azurerm_network_interface.nic,
     azurerm_network_interface.nic1
   ]
@@ -290,11 +333,11 @@ resource "azurerm_virtual_machine" "single_gateway_vm_instance" {
   location                      = module.common.resource_group_location
   zones                         = var.extended_zone == "None" ? (var.zone == "" ? null : [var.zone]) : null
   name                          = var.single_gateway_name
-  network_interface_ids         = [azurerm_network_interface.nic.id, azurerm_network_interface.nic1.id]
+  network_interface_ids         = [azurerm_network_interface.management.id, azurerm_network_interface.nic.id, azurerm_network_interface.nic1.id]
   resource_group_name           = module.common.resource_group_name
   vm_size                       = module.common.vm_size
   delete_os_disk_on_termination = module.common.delete_os_disk_on_termination
-  primary_network_interface_id  = azurerm_network_interface.nic.id
+  primary_network_interface_id  = azurerm_network_interface.management.id
 
   identity {
     type = module.common.vm_instance_identity
@@ -371,6 +414,7 @@ resource "azurerm_virtual_machine" "single_gateway_vm_instance" {
 
 resource "azurerm_linux_virtual_machine" "single_gateway_vm_instance_extended" {
   depends_on = [
+    azurerm_network_interface.management,
     azurerm_network_interface.nic,
     azurerm_network_interface.nic1
   ]
@@ -380,7 +424,7 @@ resource "azurerm_linux_virtual_machine" "single_gateway_vm_instance_extended" {
   zone                            = null
   name                            = var.single_gateway_name
   computer_name                   = lower(var.single_gateway_name)
-  network_interface_ids           = [azurerm_network_interface.nic.id, azurerm_network_interface.nic1.id]
+  network_interface_ids           = [azurerm_network_interface.management.id, azurerm_network_interface.nic.id, azurerm_network_interface.nic1.id]
   resource_group_name             = module.common.resource_group_name
   size                            = module.common.vm_size
   admin_username                  = module.common.admin_username

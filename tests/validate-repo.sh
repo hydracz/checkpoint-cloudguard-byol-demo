@@ -9,16 +9,17 @@ required=(
   infra/vendor/README.md infra/vendor/vendor-checksums.sha256
   infra/vendor/checkpoint-cloudguard-network-security/LICENSE
   infra/vendor/checkpoint-cloudguard-network-security/PATCHES.md
-  infra/networking.tf infra/workloads.tf infra/logging.tf infra/outputs.tf
+  infra/networking.tf infra/workloads.tf infra/management.tf infra/logging.tf infra/outputs.tf
   infra/tests/demo.tftest.hcl infra/tests/r81-module.tftest.hcl
   configs/demo.tfvars.example
   cloud-init/workload.yaml cloud-init/collector.yaml
-  scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh
+  scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh scripts/test.sh
   scripts/migrate-tfvars.sh
   scripts/publish-vhd-image.sh
   scripts/verify-vendor.sh
   scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh
   scripts/enable-audit-export.sh
+  scripts/validate-data-nsg.py
   scripts/vm-case.sh scripts/run-tests.sh scripts/render-test-report.py scripts/validate-existing.sh
   scripts/query-logs.sh
   scripts/lock-worm.sh scripts/destroy.sh
@@ -79,17 +80,23 @@ grep -q 'join("\\u001f")' "$ROOT/scripts/preflight.sh"
 grep -q 'CHECKPOINT_SSH_WAIT_SECONDS' "$ROOT/scripts/configure-policy.sh"
 grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/configure-policy.sh"
 grep -q 'CHECKPOINT_TLS_CA_FILE' "$ROOT/scripts/configure-policy.sh"
+grep -q 'CHECKPOINT_TRANSPORT:-ssh' "$ROOT/scripts/configure-policy.sh"
 ! grep -q 'skip_policy_configuration.value // true' "$ROOT/scripts/configure-policy.sh"
 grep -q 'ensure_restricted_ssh_nsg_rules' "$ROOT/scripts/lib.sh"
 grep -q 'remove_temporary_restricted_ssh_nsg_rule' "$ROOT/scripts/lib.sh"
 grep -q 'Failed to remove temporary SSH rule' "$ROOT/scripts/lib.sh"
 grep -q 'checkpoint-demo-ssh' "$ROOT/scripts/lib.sh"
 grep -q 'CHECKPOINT_RECONCILE_SSH_RULE' "$ROOT/scripts/run-tests.sh"
+grep -q 'DenyOtherVnetManagement' "$ROOT/scripts/run-tests.sh"
+grep -q 'checkpoint_management_nic_id' "$ROOT/scripts/run-tests.sh"
+grep -q 'T17-data-plane-nsg-rules.json' "$ROOT/scripts/run-tests.sh"
+grep -q 'validate_no_public_management_rules' "$ROOT/scripts/run-tests.sh"
+python3 "$ROOT/scripts/validate-data-nsg.py" --self-test
 grep -q -- '--outputs-file' "$ROOT/scripts/configure-policy.sh" "$ROOT/scripts/run-tests.sh"
 grep -q 'CloudGuard 部署验证报告' "$ROOT/scripts/render-test-report.py"
 grep -q 'report.html' "$ROOT/scripts/render-test-report.py"
-grep -q 'CHECKPOINT_SKIP_POLICY_CONFIGURATION=false' "$ROOT/scripts/validate-existing.sh"
 grep -q -- '--ca-file' "$ROOT/scripts/validate-existing.sh"
+! grep -q -- '--configure-policy' "$ROOT/scripts/validate-existing.sh"
 grep -q 'RECONCILED' "$ROOT/scripts/run-tests.sh" "$ROOT/scripts/render-test-report.py"
 grep -q 'unset outputs' "$ROOT/scripts/configure-policy.sh" "$ROOT/scripts/run-tests.sh"
 grep -Fq "SyslogMessage contains 'action=\\\"Accept\\\"'" "$ROOT/scripts/run-tests.sh"
@@ -105,6 +112,10 @@ grep -q 'urls-defined-as-regular-expression true' "$ROOT/scripts/checkpoint-poli
 ! grep -q 'nat-hide-internal-interfaces true' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'LOG_INGEST_WAIT_SECONDS' "$ROOT/scripts/run-tests.sh"
 grep -q 'Deleting a stale recovered data export' "$ROOT/scripts/enable-audit-export.sh"
+grep -q 'SYSLOG_TABLE_WAIT_SECONDS' "$ROOT/scripts/enable-audit-export.sh"
+grep -Fq -- "--query '[0].Count'" "$ROOT/scripts/enable-audit-export.sh"
+! grep -q 'elif (.tables?' "$ROOT/scripts/enable-audit-export.sh"
+grep -q 'windows_client_size.*var.windows_client_vm_size' "$ROOT/scripts/preflight.sh"
 grep -q 'nameopt RFC2253' "$ROOT/scripts/run-tests.sh"
 grep -q '"arg4=\$EXPECTED_CA_ISSUER_ARG"' "$ROOT/scripts/run-tests.sh"
 grep -q '15 PASS / 1 SKIP' "$ROOT/docs/r81-image-e2e-test-and-operations.md"
@@ -123,12 +134,28 @@ grep -q 'variable "management_cidrs"' "$ROOT/infra/variables.tf"
 grep -q 'cidrhost(cidr, 0) == split("/", cidr)\[0\]' "$ROOT/infra/variables.tf"
 grep -q 'output "management_cidrs"' "$ROOT/infra/outputs.tf"
 grep -q 'source_address_prefixes.*local.management_cidrs' "$ROOT/infra/locals.tf"
+grep -q 'default     = \[\]' "$ROOT/infra/variables.tf"
+grep -q 'management_private_ip.*local.gateway_management_ip' "$ROOT/infra/checkpoint.tf"
+grep -q 'network_interface_ids.*management.id.*nic.id.*nic1.id' \
+  "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/main.tf"
+grep -q 'primary_network_interface_id.*management.id' \
+  "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/main.tf"
+grep -q 'name.*-management' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/main.tf"
+grep -q 'name.*-frontend' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/main.tf"
+grep -q 'name.*-backend' "$ROOT/infra/vendor/checkpoint-cloudguard-network-security/modules/single-gateway/main.tf"
 grep -q 'cp_conf client createlist' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'MANAGEMENT_POLICY_SOURCE="Any"' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'default-via-checkpoint' "$ROOT/infra/networking.tf"
 grep -q 'remote-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
 grep -q 'eu-spoke-via-checkpoint' "$ROOT/infra/networking.tf"
 grep -q 'allow_forwarded_traffic.*= true' "$ROOT/infra/networking.tf"
+grep -q 'resource "azurerm_windows_virtual_machine" "management"' "$ROOT/infra/management.tf"
+grep -q 'resource "azurerm_bastion_host" "management"' "$ROOT/infra/management.tf"
+grep -q 'name.*= "AzureBastionSubnet"' "$ROOT/infra/management.tf"
+grep -q 'source_address_prefix.*= var.bastion_subnet_prefix' "$ROOT/infra/management.tf"
+grep -q 'azurerm_network_interface_security_group_association.*windows_client' "$ROOT/infra/management.tf"
+! grep -q 'azurerm_subnet_network_security_group_association.*windows_client' "$ROOT/infra/management.tf"
+grep -q 'write_terraform_outputs' "$ROOT/scripts/deploy.sh" "$ROOT/scripts/enable-audit-export.sh"
 grep -q 'table_names.*= \["Syslog"\]' "$ROOT/infra/logging.tf"
 grep -q 'count = var.enable_log_data_export ? 1 : 0' "$ROOT/infra/logging.tf"
 grep -q 'am-syslog' "$ROOT/infra/logging.tf"
@@ -139,9 +166,14 @@ grep -q 'enable-https-inspection true' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'add outbound-inspection-certificate' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'show updatable-objects-repository-content' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'set static-route' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q 'MANAGEMENT_AZURE_GATEWAY' "$ROOT/scripts/checkpoint-policy.sh"
 grep -q 'cp_log_export add' "$ROOT/scripts/checkpoint-policy.sh"
+grep -q -- '--enable-audit-export' "$ROOT/scripts/deploy.sh"
 grep -q -- '--lock-worm' "$ROOT/scripts/deploy.sh"
 grep -q 'enable-audit-export.sh' "$ROOT/scripts/deploy.sh"
+! grep -q 'configure-policy.sh' "$ROOT/scripts/deploy.sh"
+! grep -q 'terraform.*test' "$ROOT/scripts/preflight.sh"
+grep -Fq '"$TERRAFORM" -chdir="$INFRA" test' "$ROOT/scripts/test.sh"
 grep -q -- '--yes' "$ROOT/scripts/lock-worm.sh"
 grep -q 'CONFIRM_DESTROY' "$ROOT/scripts/destroy.sh"
 grep -q 'permanently_delete_on_destroy.*= true' "$ROOT/infra/versions.tf"
@@ -204,8 +236,36 @@ for diagram in root.findall("diagram"):
                     f"diagram {diagram.attrib.get('name')} edge {edge.attrib.get('id')} "
                     f"has missing {field} {reference}"
                 )
-    if diagram.attrib.get("name") == "01-资源与IP规划" and len(edges) > 10:
-        raise SystemExit("resource/IP page has too many edges and risks becoming unreadable")
+    if diagram.attrib.get("name") == "01-现场环境资源与IP":
+        if len(edges) > 5:
+            raise SystemExit("resource/IP page has too many edges and risks becoming unreadable")
+        cells_by_id = {cell.attrib.get("id"): cell for cell in cells}
+        x_positions = {
+            cell_id: float(cells_by_id[cell_id].find("mxGeometry").attrib["x"])
+            for cell_id in ("r-eu-spoke", "r-hub", "r-remote-spoke")
+        }
+        if not (
+            x_positions["r-eu-spoke"]
+            < x_positions["r-hub"]
+            < x_positions["r-remote-spoke"]
+        ):
+            raise SystemExit("Hub must be centered between the two spokes")
+        peering_pairs = {
+            frozenset((edge.attrib.get("source"), edge.attrib.get("target")))
+            for edge in edges
+            if edge.attrib.get("id", "").startswith("r-e-peer-")
+        }
+        expected_pairs = {
+            frozenset(("r-peer-hub", "r-peer-eu")),
+            frozenset(("r-peer-hub", "r-peer-remote")),
+        }
+        if peering_pairs != expected_pairs:
+            raise SystemExit("Spokes must peer independently with Hub and not with each other")
+    if diagram.attrib.get("name") == "04-部署与审计" and any(
+        edge.attrib.get("source") == "d-s6" or edge.attrib.get("target") == "d-s6"
+        for edge in edges
+    ):
+        raise SystemExit("independent tests must not be connected into the deployment flow")
 PY
 
 python3 - "$ROOT/docs/checkpoint-cloudguard-byol-test-architecture.svg" <<'PY'
@@ -215,7 +275,7 @@ import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 if not root.tag.endswith("svg"):
     raise SystemExit("architecture preview must be an SVG")
-if root.attrib.get("viewBox") != "0 0 1600 900":
+if root.attrib.get("viewBox") != "0 0 1600 1000":
     raise SystemExit("architecture preview has an unexpected viewBox")
 PY
 

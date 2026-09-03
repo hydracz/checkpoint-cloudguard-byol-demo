@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-08-27T00:35:00.000Z" agent="GitHub Copilot CLI" version="24.7.17" type="device" compressed="false">
+<mxfile host="app.diagrams.net" modified="2026-09-03T09:00:00.000Z" agent="GitHub Copilot CLI" version="24.7.17" type="device" compressed="false">
   <diagram id="resource-ip-plan" name="01-现场环境资源与IP">
     <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
       <root>
@@ -8,68 +8,83 @@
         <mxCell id="r-title" value="Check Point CloudGuard BYOL - Azure 资源与 IP 规划" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=24;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="r-subtitle" value="页面只表达资源归属与地址分配；业务流量移至第 2 页，避免连线压住设备。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=13;fontColor=#5E6C84;" vertex="1" parent="1">
+        <mxCell id="r-subtitle" value="资源归属由 Region / VNet / subnet 分组和 NIC 角色文字表达；不画跨 subnet attach 线，业务流量统一放在第 2 页。" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=13;fontColor=#5E6C84;" vertex="1" parent="1">
           <mxGeometry x="40" y="60" width="1100" height="30" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-boundary" value="EU DATA BOUNDARY" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeWidth=2;strokeColor=#005A9E;fillColor=#F7FBFF;verticalAlign=top;align=left;spacingTop=10;spacingLeft=14;fontStyle=1;fontColor=#005A9E;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="30" y="105" width="1540" height="850" as="geometry"/>
         </mxCell>
-        <mxCell id="r-primary" value="Primary EU Region - North Europe（现场）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#0078D4;fillColor=#EAF4FF;fontStyle=1;fontSize=14;fontColor=#004578;" vertex="1" parent="1">
+        <mxCell id="r-primary" value="Primary EU Region - West Europe（默认）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#0078D4;fillColor=#EAF4FF;fontStyle=1;fontSize=14;fontColor=#004578;" vertex="1" parent="1">
           <mxGeometry x="55" y="150" width="1035" height="670" as="geometry"/>
         </mxCell>
-        <mxCell id="r-secondary" value="Secondary EU Region - West Europe（现场）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#008272;fillColor=#E8F7F4;fontStyle=1;fontSize=14;fontColor=#005B50;" vertex="1" parent="1">
+        <mxCell id="r-secondary" value="Secondary EU Region - North Europe（默认）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#008272;fillColor=#E8F7F4;fontStyle=1;fontSize=14;fontColor=#005B50;" vertex="1" parent="1">
           <mxGeometry x="1110" y="150" width="430" height="670" as="geometry"/>
         </mxCell>
         <mxCell id="r-hub" value="Hub VNet 10.60.0.0/16" style="swimlane;horizontal=1;startSize=30;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#FFFFFF;fontStyle=1;fontSize=13;fontColor=#0747A6;" vertex="1" parent="1">
-          <mxGeometry x="80" y="205" width="640" height="580" as="geometry"/>
+          <mxGeometry x="410" y="205" width="650" height="580" as="geometry"/>
         </mxCell>
-        <mxCell id="r-cpvm" value="VM: cpbyol-gateway&#xa;Check Point CloudGuard R82&#xa;Standalone Management + Gateway&#xa;SKU: Standard_F16s (16 vCPU/32 GiB, 现场)&#xa;Gen1 Marketplace: mgmt-byol" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=13;fontColor=#BF2600;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="265" y="255" width="270" height="120" as="geometry"/>
+        <mxCell id="r-cpvm" value="VM: cpbyol-gateway&#xa;Check Point CloudGuard R81 / R82&#xa;Standalone Management + Gateway&#xa;3 NICs at initial deployment&#xa;Future: separate Management + multi-Gateway" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=13;fontColor=#BF2600;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="245" width="270" height="125" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-management-subnet" value="Subnet: management 10.60.3.0/24&#xa;Private management plane - no Public IP" style="swimlane;horizontal=1;startSize=42;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#F4F0FF;fontStyle=1;fontSize=12;fontColor=#403294;" vertex="1" parent="1">
+          <mxGeometry x="435" y="390" width="600" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-management-nic" value="NIC: cpbyol-gateway-management&#xa;eth0 / Management&#xa;10.60.3.4 / Primary NIC" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
+          <mxGeometry x="450" y="438" width="175" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-windows-vm" value="VM: cpbyol-windows-client&#xa;Windows Server 2022&#xa;Standard_D4ls_v6 / 4C/8GiB&#xa;No Public IP" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
+          <mxGeometry x="640" y="432" width="175" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-windows-nic" value="NIC: cpbyol-windows-client-nic&#xa;Private IP: 10.60.3.10&#xa;SmartConsole workstation" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
+          <mxGeometry x="830" y="432" width="190" height="70" as="geometry"/>
         </mxCell>
         <mxCell id="r-front-subnet" value="Subnet: checkpoint-frontend&#xa;10.60.0.0/24" style="swimlane;horizontal=1;startSize=42;rounded=1;whiteSpace=wrap;html=1;strokeColor=#4C9AFF;fillColor=#DEEBFF;fontStyle=1;fontSize=12;fontColor=#0747A6;" vertex="1" parent="1">
-          <mxGeometry x="105" y="420" width="270" height="135" as="geometry"/>
+          <mxGeometry x="435" y="525" width="280" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="r-eth0" value="NIC: cpbyol-gateway-eth0&#xa;eth0 / External&#xa;Private IP: 10.60.0.4&#xa;Public IP: Static Standard" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="1">
-          <mxGeometry x="130" y="470" width="220" height="70" as="geometry"/>
+        <mxCell id="r-front-nic" value="NIC: cpbyol-gateway-frontend&#xa;eth1 / External&#xa;10.60.0.4 / Public IP&#xa;No public management ports" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="1">
+          <mxGeometry x="455" y="570" width="240" height="62" as="geometry"/>
         </mxCell>
         <mxCell id="r-back-subnet" value="Subnet: checkpoint-backend&#xa;10.60.1.0/24" style="swimlane;horizontal=1;startSize=42;rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="1">
-          <mxGeometry x="425" y="420" width="270" height="135" as="geometry"/>
+          <mxGeometry x="755" y="525" width="280" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="r-eth1" value="NIC: cpbyol-gateway-eth1&#xa;eth1 / Internal&#xa;Private IP: 10.60.1.4&#xa;IP Forwarding: Enabled" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=11;fontColor=#006644;" vertex="1" parent="1">
-          <mxGeometry x="450" y="470" width="220" height="70" as="geometry"/>
+        <mxCell id="r-back-nic" value="NIC: cpbyol-gateway-backend&#xa;eth2 / Internal&#xa;10.60.1.4 / NVA next hop&#xa;IP Forwarding: Enabled" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=11;fontColor=#006644;" vertex="1" parent="1">
+          <mxGeometry x="775" y="570" width="240" height="62" as="geometry"/>
         </mxCell>
         <mxCell id="r-collector-subnet" value="Subnet: log-collector 10.60.2.0/24" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#F4F0FF;fontStyle=1;fontSize=12;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="105" y="595" width="590" height="155" as="geometry"/>
+          <mxGeometry x="735" y="660" width="300" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="r-collector-vm" value="VM: cpbyol-log-collector&#xa;Ubuntu 24.04 / Standard_D4ls_v6&#xa;4C/8GiB / rsyslog + AMA" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="130" y="650" width="245" height="75" as="geometry"/>
+        <mxCell id="r-collector-vm" value="cpbyol-log-collector + NIC&#xa;10.60.2.4 / rsyslog + AMA&#xa;Public IP: bootstrap outbound only" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
+          <mxGeometry x="750" y="701" width="270" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="r-collector-nic" value="NIC: cpbyol-collector-nic&#xa;Private IP: 10.60.2.4&#xa;Public IP: outbound bootstrap only&#xa;Inbound: UDP/TCP 514 from 10.60.1.4" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="410" y="642" width="255" height="90" as="geometry"/>
+        <mxCell id="r-bastion-subnet" value="AzureBastionSubnet 10.60.4.0/26" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=12;fontColor=#0747A6;" vertex="1" parent="1">
+          <mxGeometry x="435" y="660" width="280" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="r-bastion" value="Azure Bastion Basic&#xa;RDP only to Windows client" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
+          <mxGeometry x="455" y="705" width="240" height="42" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-spoke" value="EU Spoke VNet 10.61.0.0/16" style="swimlane;horizontal=1;startSize=30;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#00A3BF;fillColor=#FFFFFF;fontStyle=1;fontSize=13;fontColor=#006B76;" vertex="1" parent="1">
-          <mxGeometry x="750" y="205" width="310" height="360" as="geometry"/>
+          <mxGeometry x="80" y="205" width="300" height="360" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-rt" value="Route Table: cpbyol-eu-workload-rt&#xa;0.0.0.0/0 → 10.60.1.4&#xa;10.62.0.0/16 → 10.60.1.4&#xa;10.60.0.0/16 → 10.60.1.4" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
-          <mxGeometry x="775" y="255" width="260" height="90" as="geometry"/>
+          <mxGeometry x="100" y="255" width="260" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-subnet" value="Subnet: workload 10.61.0.0/24&#xa;NSG: inbound TCP/8080 from protected networks" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#00A3BF;fillColor=#E6FCFF;fontSize=11;fontColor=#006B76;" vertex="1" parent="1">
-          <mxGeometry x="775" y="365" width="260" height="65" as="geometry"/>
+          <mxGeometry x="100" y="365" width="260" height="65" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-vm" value="VM: cpbyol-eu-workload&#xa;Ubuntu 24.04 / Standard_D4ls_v6&#xa;4C/8GiB / No Public IP" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#00A3BF;fillColor=#B3F5FF;fontStyle=1;fontSize=11;fontColor=#006B76;" vertex="1" parent="1">
-          <mxGeometry x="775" y="450" width="125" height="85" as="geometry"/>
+          <mxGeometry x="100" y="450" width="125" height="85" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-nic" value="NIC: cpbyol-eu-workload-nic&#xa;Private IP: 10.61.0.4" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#00A3BF;fillColor=#B3F5FF;fontSize=11;fontColor=#006B76;" vertex="1" parent="1">
-          <mxGeometry x="915" y="450" width="120" height="85" as="geometry"/>
+          <mxGeometry x="240" y="450" width="120" height="85" as="geometry"/>
         </mxCell>
         <mxCell id="r-observability" value="EU Observability / Retention Services" style="swimlane;horizontal=1;startSize=30;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#FFFFFF;fontStyle=1;fontSize=13;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="750" y="595" width="310" height="190" as="geometry"/>
+          <mxGeometry x="80" y="595" width="300" height="190" as="geometry"/>
         </mxCell>
         <mxCell id="r-law" value="Log Analytics Workspace&#xa;Table: Syslog&#xa;Retention: 90 days default" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="775" y="645" width="125" height="95" as="geometry"/>
+          <mxGeometry x="100" y="645" width="125" height="95" as="geometry"/>
         </mxCell>
         <mxCell id="r-storage" value="Storage Account (GRS)&#xa;Container: am-syslog&#xa;Versioning + WORM&#xa;365 days default" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="1">
-          <mxGeometry x="920" y="635" width="115" height="115" as="geometry"/>
+          <mxGeometry x="245" y="635" width="115" height="115" as="geometry"/>
         </mxCell>
         <mxCell id="r-remote-spoke" value="Remote Spoke VNet 10.62.0.0/16" style="swimlane;horizontal=1;startSize=30;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#008272;fillColor=#FFFFFF;fontStyle=1;fontSize=13;fontColor=#005B50;" vertex="1" parent="1">
           <mxGeometry x="1140" y="205" width="370" height="430" as="geometry"/>
@@ -89,30 +104,17 @@
         <mxCell id="r-remote-note" value="跨区域私网演示：Global VNet Peering&#xa;生产可替换 ExpressRoute / vWAN / VPN" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="1">
           <mxGeometry x="1170" y="675" width="310" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="r-peering-bus" value="PEERING BUS（仅表示网络关系，不承载业务流量线）" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="1">
+        <mxCell id="r-peering-bus" value="HUB-SPOKE PEERING：EU Spoke ↔ Hub ↔ Remote Spoke；两个 Spoke 无直接 Peering" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="1">
           <mxGeometry x="380" y="850" width="840" height="45" as="geometry"/>
         </mxCell>
         <mxCell id="r-peer-hub" value="Hub VNet" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=11;fontColor=#006644;" vertex="1" parent="1">
-          <mxGeometry x="420" y="905" width="160" height="35" as="geometry"/>
+          <mxGeometry x="710" y="905" width="180" height="35" as="geometry"/>
         </mxCell>
         <mxCell id="r-peer-eu" value="EU Spoke&#xa;Bidirectional Peering" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=10;fontColor=#006644;" vertex="1" parent="1">
-          <mxGeometry x="710" y="900" width="180" height="45" as="geometry"/>
+          <mxGeometry x="420" y="900" width="180" height="45" as="geometry"/>
         </mxCell>
         <mxCell id="r-peer-remote" value="Remote Spoke&#xa;Global Bidirectional Peering" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=10;fontColor=#006644;" vertex="1" parent="1">
           <mxGeometry x="1020" y="900" width="200" height="45" as="geometry"/>
-        </mxCell>
-        <mxCell id="r-e-cp-eth0" value="NIC attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#FF8B00;fontSize=10;" edge="1" parent="1" source="r-cpvm" target="r-eth0">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="240" y="395"/></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r-e-cp-eth1" value="NIC attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#36B37E;fontSize=10;" edge="1" parent="1" source="r-cpvm" target="r-eth1">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="560" y="395"/></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="r-e-collector" value="NIC attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#6554C0;fontSize=10;" edge="1" parent="1" source="r-collector-vm" target="r-collector-nic">
-          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="r-e-eu-nic" value="NIC attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#00A3BF;fontSize=10;" edge="1" parent="1" source="r-eu-vm" target="r-eu-nic">
           <mxGeometry relative="1" as="geometry"/>
@@ -120,17 +122,17 @@
         <mxCell id="r-e-remote-nic" value="NIC attach" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#008272;fontSize=10;" edge="1" parent="1" source="r-remote-vm" target="r-remote-nic">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r-e-peer-eu" value="allow_forwarded_traffic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#36B37E;startArrow=classic;startFill=1;endArrow=classic;endFill=1;fontSize=10;" edge="1" parent="1" source="r-peer-hub" target="r-peer-eu">
+        <mxCell id="r-e-peer-eu" value="bidirectional" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#36B37E;startArrow=classic;startFill=1;endArrow=classic;endFill=1;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r-peer-hub" target="r-peer-eu">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="r-e-peer-remote" value="allow_forwarded_traffic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#36B37E;startArrow=classic;startFill=1;endArrow=classic;endFill=1;fontSize=10;" edge="1" parent="1" source="r-peer-eu" target="r-peer-remote">
+        <mxCell id="r-e-peer-remote" value="global bidirectional" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#36B37E;startArrow=classic;startFill=1;endArrow=classic;endFill=1;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r-peer-hub" target="r-peer-remote">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="routing-traffic" name="02-路由与流量">
-    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+    <mxGraphModel dx="1600" dy="1150" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1150" math="0" shadow="0">
       <root>
         <mxCell id="t0"/>
         <mxCell id="t1" parent="t0"/>
@@ -149,10 +151,10 @@
         <mxCell id="t-a-udr" value="Spoke Route Table&#xa;0.0.0.0/0 → 10.60.1.4" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="t1">
           <mxGeometry x="345" y="165" width="200" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="t-a-cp" value="Check Point&#xa;eth1 → L4/L7/Geo/TLS → eth0&#xa;Hide NAT" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
+        <mxCell id="t-a-cp" value="Check Point&#xa;eth2 → L4/L7/Geo/TLS → eth1&#xa;Hide NAT" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
           <mxGeometry x="625" y="155" width="250" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="t-a-pip" value="Azure Public IP NAT&#xa;eth0 10.60.0.4 → Public IP" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="t1">
+        <mxCell id="t-a-pip" value="Azure Public IP NAT&#xa;eth1 10.60.0.4 → Public IP" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="t1">
           <mxGeometry x="955" y="165" width="220" height="70" as="geometry"/>
         </mxCell>
         <mxCell id="t-a-dst" value="Internet&#xa;HTTP / HTTPS / DNS" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
@@ -167,13 +169,13 @@
         <mxCell id="t-b-udr" value="EU Route Table&#xa;10.62.0.0/16 → 10.60.1.4" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="t1">
           <mxGeometry x="315" y="360" width="210" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="t-b-cp" value="Check Point eth1&#xa;Stateful policy&#xa;TCP/8080 allowed + Extended Log" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
+        <mxCell id="t-b-cp" value="Hub Check Point eth2&#xa;Stateful policy&#xa;TCP/8080 allowed + Extended Log" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
           <mxGeometry x="590" y="350" width="230" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="t-b-gaia" value="Gaia Static Route&#xa;10.62.0.0/16 → 10.60.1.1&#xa;Egress: eth1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#ABF5D1;fontStyle=1;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
+        <mxCell id="t-b-gaia" value="Gaia Static Route&#xa;10.62.0.0/16 → 10.60.1.1&#xa;Egress: eth2" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#ABF5D1;fontStyle=1;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
           <mxGeometry x="885" y="350" width="220" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="t-b-peer" value="Hub ↔ Remote&#xa;Global VNet Peering&#xa;allow_forwarded_traffic" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
+        <mxCell id="t-b-peer" value="Hub → Remote Spoke&#xa;Global VNet Peering&#xa;allow_forwarded_traffic" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
           <mxGeometry x="1170" y="350" width="200" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="t-b-dst" value="Remote VM&#xa;10.62.0.4" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#008272;fillColor=#ABF5D1;fontStyle=1;fontSize=11;fontColor=#005B50;" vertex="1" parent="t1">
@@ -188,10 +190,10 @@
         <mxCell id="t-c-pip" value="Public IP TCP/18080&#xa;Azure NAT → 10.60.0.4" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="t1">
           <mxGeometry x="335" y="558" width="200" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="t-c-cp" value="Check Point eth0&#xa;Access Rule + Manual DNAT&#xa;18080 → 10.61.0.4:8080" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
+        <mxCell id="t-c-cp" value="Check Point eth1&#xa;Access Rule + Manual DNAT&#xa;18080 → 10.61.0.4:8080" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1">
           <mxGeometry x="610" y="548" width="235" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="t-c-gaia" value="Gaia Static Route&#xa;10.61.0.0/16 → 10.60.1.1&#xa;Egress: eth1" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
+        <mxCell id="t-c-gaia" value="Gaia Static Route&#xa;10.61.0.0/16 → 10.60.1.1&#xa;Egress: eth2" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#ABF5D1;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
           <mxGeometry x="920" y="548" width="220" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="t-c-nsg" value="EU Workload NSG&#xa;TCP/8080 from approved source CIDR" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="t1">
@@ -218,15 +220,23 @@
         <mxCell id="t-d-law" value="AMA + DCR → Log Analytics&#xa;Syslog → am-syslog WORM" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="t1">
           <mxGeometry x="1160" y="750" width="270" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="t-route-note" value="返回路径：东西向与 DNAT 会话从目标 workload 的 UDR 再返回 10.60.1.4；Check Point state table 恢复原始会话并从正确 NIC 发出。" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
-          <mxGeometry x="300" y="895" width="1000" height="60" as="geometry"/>
+        <mxCell id="t-lane5" value="E. 私有管理平面（不开放公网管理端口）" style="swimlane;horizontal=1;startSize=32;rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=13;fontColor=#0747A6;" vertex="1" parent="t1">
+          <mxGeometry x="40" y="885" width="1520" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-e-bastion" value="Azure Bastion&#xa;10.60.4.0/26" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="t1"><mxGeometry x="75" y="930" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="t-e-windows" value="Windows / SmartConsole&#xa;10.60.3.10" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="t1"><mxGeometry x="355" y="930" width="210" height="60" as="geometry"/></mxCell>
+        <mxCell id="t-e-nsg" value="Management NSG&#xa;22 / 443 / 18190 / 19009&#xa;Source: trusted private CIDRs" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=11;fontColor=#403294;" vertex="1" parent="t1"><mxGeometry x="655" y="920" width="240" height="80" as="geometry"/></mxCell>
+        <mxCell id="t-e-cp" value="Check Point eth0 / Management&#xa;10.60.3.4 / No Public IP" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=3;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="t1"><mxGeometry x="985" y="930" width="230" height="60" as="geometry"/></mxCell>
+        <mxCell id="t-e-future" value="Future&#xa;Dedicated Management Server&#xa;+ multiple Gateways" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="t1"><mxGeometry x="1300" y="920" width="215" height="80" as="geometry"/></mxCell>
+        <mxCell id="t-route-note" value="返回路径：数据面经 eth2 / backend 10.60.1.4；公网流量经 eth1 / frontend；所有管理访问只经 eth0 / management。" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=11;fontColor=#006644;" vertex="1" parent="t1">
+          <mxGeometry x="300" y="1050" width="1000" height="55" as="geometry"/>
         </mxCell>
         <mxCell id="ta1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#2684FF;" edge="1" parent="t1" source="t-a-src" target="t-a-udr"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="ta2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#2684FF;" edge="1" parent="t1" source="t-a-udr" target="t-a-cp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ta2" value="Spoke → Hub" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#2684FF;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="t1" source="t-a-udr" target="t-a-cp"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="ta3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#2684FF;" edge="1" parent="t1" source="t-a-cp" target="t-a-pip"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="ta4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#2684FF;" edge="1" parent="t1" source="t-a-pip" target="t-a-dst"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="tb1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;" edge="1" parent="t1" source="t-b-src" target="t-b-udr"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="tb2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;" edge="1" parent="t1" source="t-b-udr" target="t-b-cp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="tb2" value="EU Spoke → Hub" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="t1" source="t-b-udr" target="t-b-cp"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="tb3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;" edge="1" parent="t1" source="t-b-cp" target="t-b-gaia"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="tb4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;" edge="1" parent="t1" source="t-b-gaia" target="t-b-peer"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="tb5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#36B37E;" edge="1" parent="t1" source="t-b-peer" target="t-b-dst"><mxGeometry relative="1" as="geometry"/></mxCell>
@@ -239,6 +249,10 @@
         <mxCell id="td2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="t1" source="t-d-route" target="t-d-exporter"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="td3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="t1" source="t-d-exporter" target="t-d-collector"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="td4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="t1" source="t-d-collector" target="t-d-law"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="te1" value="RDP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;fontSize=10;" edge="1" parent="t1" source="t-e-bastion" target="t-e-windows"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="te2" value="SmartConsole / Gaia" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#6554C0;fontSize=10;" edge="1" parent="t1" source="t-e-windows" target="t-e-nsg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="te3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#6554C0;" edge="1" parent="t1" source="t-e-nsg" target="t-e-cp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="te4" value="evolution path" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeWidth=2;strokeColor=#FF8B00;fontSize=10;" edge="1" parent="t1" source="t-e-cp" target="t-e-future"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
@@ -247,13 +261,13 @@
       <root>
         <mxCell id="p0"/>
         <mxCell id="p1" parent="p0"/>
-        <mxCell id="p-title" value="Check Point 安全策略、对象与 TLS Inspection" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=24;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="p1">
+        <mxCell id="p-title" value="Check Point 手工策略规划与保留的 R81 / R82 自动化" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=24;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="p1">
           <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="p-objects" value="策略对象" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=14;fontColor=#0747A6;" vertex="1" parent="p1">
           <mxGeometry x="45" y="100" width="390" height="760" as="geometry"/>
         </mxCell>
-        <mxCell id="p-networks" value="Network Group: CloudGuard-Protected-Networks&#xa;• CloudGuard-EU-Spoke 10.61.0.0/16&#xa;• CloudGuard-Remote-Spoke 10.62.0.0/16&#xa;eth1: network defined by routing" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=12;fontColor=#0747A6;" vertex="1" parent="p1">
+        <mxCell id="p-networks" value="Network Group: CloudGuard-Protected-Networks&#xa;• CloudGuard-EU-Spoke 10.61.0.0/16&#xa;• CloudGuard-Remote-Spoke 10.62.0.0/16&#xa;eth2: network defined by routing" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=12;fontColor=#0747A6;" vertex="1" parent="p1">
           <mxGeometry x="80" y="165" width="320" height="100" as="geometry"/>
         </mxCell>
         <mxCell id="p-geo" value="Geo Updatable Objects&#xa;运行时按英文国家名精确查询 repository&#xa;导入 UID/URI，不使用静态 CIDR 回退" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#DE350B;fillColor=#FFEBE6;fontSize=12;fontColor=#BF2600;" vertex="1" parent="p1">
@@ -262,16 +276,16 @@
         <mxCell id="p-l7" value="Application / Site Objects&#xa;• Custom URL list&#xa;• example.com&#xa;• httpbin.org/anything/blocked&#xa;• P2P File Sharing category" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=12;fontColor=#403294;" vertex="1" parent="p1">
           <mxGeometry x="80" y="425" width="320" height="125" as="geometry"/>
         </mxCell>
-        <mxCell id="p-services" value="Service / Host Objects&#xa;• TCP/8080 demo web&#xa;• TCP/18080 optional ingress&#xa;• Frontend host 10.60.0.4&#xa;• EU web host 10.61.0.4" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
+        <mxCell id="p-services" value="Service / Host Objects&#xa;• TCP/8080 demo web&#xa;• TCP/18080 optional ingress&#xa;• Frontend eth1 host 10.60.0.4&#xa;• EU web host 10.61.0.4" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
           <mxGeometry x="80" y="580" width="320" height="125" as="geometry"/>
         </mxCell>
-        <mxCell id="p-target" value="Policy Target&#xa;Standalone gateway object discovered by name or frontend IP&#xa;Install-on = managed gateway" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=12;fontColor=#974F0C;" vertex="1" parent="p1">
+        <mxCell id="p-target" value="Policy Target&#xa;Current: standalone via management 10.60.3.4&#xa;Future: dedicated Management Server + multiple Gateways" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=12;fontColor=#974F0C;" vertex="1" parent="p1">
           <mxGeometry x="80" y="735" width="320" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="p-policy" value="Access Control Rule Order" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#FF5630;fillColor=#FFF7F5;fontStyle=1;fontSize=14;fontColor=#BF2600;" vertex="1" parent="p1">
+        <mxCell id="p-policy" value="SmartConsole 手工配置顺序（可选内网脚本保留）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#FF5630;fillColor=#FFF7F5;fontStyle=1;fontSize=14;fontColor=#BF2600;" vertex="1" parent="p1">
           <mxGeometry x="475" y="100" width="520" height="760" as="geometry"/>
         </mxCell>
-        <mxCell id="p-r1" value="1. Allow Gateway Services&#xa;2. Allow Restricted Management SSH&#xa;仅 Gateway 本机和 management_cidr" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
+        <mxCell id="p-r1" value="1. Confirm eth0/eth1/eth2 topology&#xa;2. Allow private management sources&#xa;Management traffic never enters public frontend" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
           <mxGeometry x="525" y="155" width="420" height="65" as="geometry"/>
         </mxCell>
         <mxCell id="p-r2" value="3. Block Geo Inbound&#xa;4. Block Geo Outbound&#xa;Geo UID | Drop | Extended Log" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#DE350B;fillColor=#FFEBE6;fontStyle=1;fontSize=12;fontColor=#BF2600;" vertex="1" parent="p1">
@@ -304,10 +318,10 @@
         <mxCell id="p-https-layer" value="Outbound HTTPS Layer&#xa;Source: protected networks&#xa;Destination: Internet&#xa;Service: HTTPS default services&#xa;Blades: Application Control + URL Filtering&#xa;Action: Inspect | Track: Log" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=12;fontColor=#403294;" vertex="1" parent="p1">
           <mxGeometry x="1100" y="305" width="390" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="p-public-ca" value="Public CA only&#xa;Returned through Azure Run Command&#xa;Saved as .local/checkpoint-demo-ca.pem" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=12;fontColor=#403294;" vertex="1" parent="p1">
+        <mxCell id="p-public-ca" value="Public CA only&#xa;Exported in SmartConsole or optional internal script&#xa;Saved as .local/checkpoint-demo-ca.pem" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontSize=12;fontColor=#403294;" vertex="1" parent="p1">
           <mxGeometry x="1100" y="500" width="390" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="p-trust" value="Demo Trust Distribution&#xa;update-ca-certificates on EU and Remote VMs&#xa;T07 verifies leaf certificate issuer" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
+        <mxCell id="p-trust" value="Trust Distribution&#xa;Manual baseline or optional internal automation&#xa;Independent tests verify the leaf issuer" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=12;fontColor=#006644;" vertex="1" parent="p1">
           <mxGeometry x="1100" y="630" width="390" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="p-prod" value="生产必须替换：企业 Inspection CA、密钥生命周期、金融/医疗/隐私 bypass、证书固定应用、QUIC/HTTP3 策略和法律评审。" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="p1">
@@ -331,21 +345,21 @@
       <root>
         <mxCell id="d0"/>
         <mxCell id="d1" parent="d0"/>
-        <mxCell id="d-title" value="一键部署编排与日志防篡改链路" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=24;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="d1">
+        <mxCell id="d-title" value="基础设施部署、私网手工配置与独立验证 / 审计" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=24;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="d1">
           <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="d-deploy" value="Deployment Lane - scripts/deploy.sh" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=14;fontColor=#0747A6;" vertex="1" parent="d1">
+        <mxCell id="d-deploy" value="Infrastructure Lane - scripts/deploy.sh（默认不配置 Check Point policy）" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=14;fontColor=#0747A6;" vertex="1" parent="d1">
           <mxGeometry x="40" y="95" width="1520" height="285" as="geometry"/>
         </mxCell>
-        <mxCell id="d-s1" value="1. Preflight&#xa;Tools / image / tests" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="d1"><mxGeometry x="70" y="180" width="150" height="75" as="geometry"/></mxCell>
+        <mxCell id="d-s1" value="1. Preflight&#xa;Tools / image / validate&#xa;No test suite" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="d1"><mxGeometry x="70" y="180" width="150" height="75" as="geometry"/></mxCell>
         <mxCell id="d-s2" value="2. Marketplace Terms&#xa;checkpoint / R82 / mgmt-byol" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontStyle=1;fontSize=11;fontColor=#974F0C;" vertex="1" parent="d1"><mxGeometry x="255" y="180" width="170" height="75" as="geometry"/></mxCell>
-        <mxCell id="d-s3" value="3. Terraform Phase 1&#xa;Network / VMs / AMA-DCR&#xa;LAW / Storage / Unlocked WORM" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="d1"><mxGeometry x="460" y="165" width="190" height="105" as="geometry"/></mxCell>
-        <mxCell id="d-s4" value="4. Check Point Config&#xa;Gaia routes / API policy&#xa;TLS CA / install-policy&#xa;cp_log_export" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#FF5630;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="d1"><mxGeometry x="685" y="160" width="190" height="115" as="geometry"/></mxCell>
-        <mxCell id="d-s5" value="5. Bootstrap Syslog&#xa;等待 Syslog 表可查询" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=11;fontColor=#403294;" vertex="1" parent="d1"><mxGeometry x="910" y="180" width="170" height="75" as="geometry"/></mxCell>
-        <mxCell id="d-s6" value="6. Terraform Phase 2&#xa;Continuous Data Export" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=11;fontColor=#403294;" vertex="1" parent="d1"><mxGeometry x="1115" y="180" width="170" height="75" as="geometry"/></mxCell>
-        <mxCell id="d-s7" value="7. Optional WORM Lock&#xa;不可逆 / 不可缩短" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#DE350B;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="d1"><mxGeometry x="1320" y="180" width="190" height="75" as="geometry"/></mxCell>
-        <mxCell id="d-secret" value="Secrets / state：client secret、SIC key 和 bootstrap 参数只进入 gitignored 本地文件或受保护 remote backend；BYOL entitlement 不进入代码。" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="d1">
-          <mxGeometry x="450" y="300" width="680" height="55" as="geometry"/>
+        <mxCell id="d-s3" value="3. Terraform Infrastructure&#xa;VNet / 3-NIC Gateway / Windows / Bastion&#xa;AMA-DCR / LAW / Storage" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="d1"><mxGeometry x="460" y="165" width="210" height="105" as="geometry"/></mxCell>
+        <mxCell id="d-s4" value="4. Private Handoff&#xa;Outputs / credentials&#xa;No Gaia/API policy automation" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#36B37E;fillColor=#E3FCEF;fontStyle=1;fontSize=11;fontColor=#006644;" vertex="1" parent="d1"><mxGeometry x="705" y="170" width="190" height="95" as="geometry"/></mxCell>
+        <mxCell id="d-s5" value="Optional Audit Export&#xa;enable-audit-export.sh&#xa;Bootstrap Syslog + Data Export" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6554C0;fillColor=#EAE6FF;fontStyle=1;fontSize=11;fontColor=#403294;" vertex="1" parent="d1"><mxGeometry x="930" y="170" width="190" height="95" as="geometry"/></mxCell>
+        <mxCell id="d-s6" value="Independent Tests（不连接部署主线）&#xa;scripts/test.sh / validate-existing.sh" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontStyle=1;fontSize=11;fontColor=#0747A6;" vertex="1" parent="d1"><mxGeometry x="1270" y="295" width="260" height="65" as="geometry"/></mxCell>
+        <mxCell id="d-s7" value="Optional WORM Lock&#xa;Explicit flag only&#xa;不可逆 / 不可缩短" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#DE350B;fillColor=#FFEBE6;fontStyle=1;fontSize=11;fontColor=#BF2600;" vertex="1" parent="d1"><mxGeometry x="1155" y="170" width="175" height="95" as="geometry"/></mxCell>
+        <mxCell id="d-secret" value="Post-deploy：通过 Bastion 登录 Windows，在 SmartConsole / Gaia Portal 手工完成配置。保留的 R81/R82 脚本只能从私有 management network 显式运行；它们不属于 deploy.sh。" style="shape=note;whiteSpace=wrap;html=1;strokeColor=#FF8B00;fillColor=#FFF0B3;fontSize=11;fontColor=#974F0C;" vertex="1" parent="d1">
+          <mxGeometry x="360" y="300" width="880" height="55" as="geometry"/>
         </mxCell>
         <mxCell id="d-audit" value="Runtime Audit Lane" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#6554C0;fillColor=#FAF8FF;fontStyle=1;fontSize=14;fontColor=#403294;" vertex="1" parent="d1">
           <mxGeometry x="40" y="420" width="1520" height="275" as="geometry"/>
@@ -365,9 +379,8 @@
         <mxCell id="ds1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;" edge="1" parent="d1" source="d-s1" target="d-s2"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="ds2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;" edge="1" parent="d1" source="d-s2" target="d-s3"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="ds3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;" edge="1" parent="d1" source="d-s3" target="d-s4"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="ds4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;" edge="1" parent="d1" source="d-s4" target="d-s5"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="ds5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2684FF;" edge="1" parent="d1" source="d-s5" target="d-s6"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="ds6" value="显式选择" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeWidth=2;strokeColor=#DE350B;fontSize=10;" edge="1" parent="d1" source="d-s6" target="d-s7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ds4" value="explicit" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeWidth=2;strokeColor=#6554C0;fontSize=10;" edge="1" parent="d1" source="d-s4" target="d-s5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ds6" value="explicit lock" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeWidth=2;strokeColor=#DE350B;fontSize=10;labelBackgroundColor=#FFFFFF;" edge="1" parent="d1" source="d-s5" target="d-s7"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="da1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="d1" source="d-a1" target="d-a2"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="da2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="d1" source="d-a2" target="d-a3"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="da3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=3;strokeColor=#6554C0;" edge="1" parent="d1" source="d-a3" target="d-a4"><mxGeometry relative="1" as="geometry"/></mxCell>

@@ -110,10 +110,9 @@ company_domain      = "example.org"
 checkpoint_admin_password = "<STRONG_GAIA_ADMIN_PASSWORD>"
 
 management_cidrs = [
-  "<PRIMARY_PUBLIC_IPV4>/32",
-  "<ADDITIONAL_PUBLIC_IPV4>/32",
-  "<APPROVED_OFFICE_CIDR>",
+  "<APPROVED_PRIVATE_OR_VPN_CIDR>",
 ]
+management_subnet_prefix = "10.60.3.0/24"
 location        = "northeurope"
 remote_location = "westeurope"
 
@@ -139,28 +138,25 @@ unset TF_VAR_admin_ssh_public_key CHECKPOINT_SSH_PRIVATE_KEY
 ./scripts/preflight.sh --var-file "<R82_TFVARS>"
 ssh-keygen -lf .local/checkpoint-demo-ssh.pub
 
-# Only use this in a test subscription whose policy removes SSH rules.
-export CHECKPOINT_RECONCILE_SSH_RULE=true
-
 ./scripts/deploy.sh --var-file "<R82_TFVARS>"
 ```
 
-本 E2E 显式填写 `management_cidrs` 以限制管理员来源；省略时默认为
-`["0.0.0.0/0"]`。单个公网 IP 使用 `/32`，办公室或 VPN 出口可写批准的 CIDR；
-执行首次部署的当前出口放在首项。Terraform 为 SSH、Gaia Portal 和 SmartConsole 的
-每个端口创建一条包含全部来源的 NSG rule，策略脚本把同一列表写入 GUI Clients 和
-`CloudGuard-SSH-Sources`。普通客户环境不设置 `CHECKPOINT_RECONCILE_SSH_RULE`。
+默认管理来源是 `management_subnet_prefix`；`management_cidrs` 只追加可信私网/VPN，
+拒绝 `0.0.0.0/0`。Terraform 在私有 `eth0` management NIC NSG 中为 SSH、Gaia Portal
+和 SmartConsole 创建规则；可选策略脚本把同一列表写入 GUI Clients 和
+`CloudGuard-SSH-Sources`。`CHECKPOINT_RECONCILE_SSH_RULE` 只对后续可选脚本/测试生效，
+不属于部署流程。
 
 部署脚本使用 `checkpoint_admin_password` 自动配置 Console 和 Gaia CLI/Portal；
 SSH Public Key 登录保持不变：
 
 ```bash
 TF="${TERRAFORM:-terraform}"
-IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
+IP="$("$TF" -chdir=infra output -raw checkpoint_management_private_ip)"
 ssh -i .local/checkpoint-demo-ssh "admin@$IP"
 ```
 
-从 `management_cidrs` 中的来源打开
+通过 Bastion 登录 Windows，并从 management subnet 打开
 `terraform -chdir=infra output -raw checkpoint_management_url`，使用用户名 `admin`
 和 tfvars 中的密码登录。`notused` 是 Azure metadata 占位用户。
 
@@ -168,9 +164,9 @@ ssh -i .local/checkpoint-demo-ssh "admin@$IP"
 Preflight 同时检查 definition Plan、Linux/Generalized/x64/Gen1、目标 region 副本和
 请求的 VM SKU。
 
-保持 `CHECKPOINT_TRANSPORT=auto`。Gaia first boot 会重启；SSH、Management API 和
-`cp_log_export` 均 ready 后才配置 policy。若强制使用 Azure Run Command，extension
-恰好跨越 FTW reboot 时可能留下 stale `Updating`。
+保持默认 `CHECKPOINT_TRANSPORT=ssh`，并从 management subnet 运行。Gaia first boot
+会重启；SSH、Management API 和 `cp_log_export` 均 ready 后才配置 policy。
+`auto` / `run-command` 只用于显式 break-glass。
 
 ## 5. R82 自动 HTTPS Inspection
 
@@ -236,7 +232,7 @@ Terraform state 中部署完整 standalone Demo，观察到：
 - T14：精确 image reference 和 Plan tuple
 - T15：Guest Gaia release
 - T16：东西向保留 workload 源 IP
-- T17：管理 NSG rules 与 `management_cidrs` 完全一致
+- T17：`eth0` 管理 NSG Allow/Deny、NIC 绑定和数据平面公网管理入口检查
 
 历史 R82 custom-image 记录已经分别观察到与 T14/T15 等价的 image/Plan 和 Gaia 字段；
 T16 是之后新增的显式测试，未在同一次历史 R82 custom-image 运行中采集，因此本文不把
@@ -248,8 +244,17 @@ T16 是之后新增的显式测试，未在同一次历史 R82 custom-image 运�
   --expected-release R82
 ```
 
-如果第一阶段只完成基础部署，在 BYOL 激活后增加 `--configure-policy`，由第二阶段创建
-R82 policy、自动配置 HTTPS Inspection，再执行完整测试。报告保存在独立 evidence 目录：
+如果第一阶段只完成基础部署，在 BYOL 激活后从 management 私网单独运行：
+
+```bash
+CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \
+  CHECKPOINT_TRANSPORT=ssh \
+  ./scripts/configure-policy.sh \
+  --outputs-file .local/latest-deployment-outputs.json
+```
+
+然后再执行独立测试。执行机还必须持有部署时的
+`.local/checkpoint-demo-ssh` 私钥。报告保存在独立 evidence 目录：
 `report.html` 包含配置、Firewall rules、测试机器、具体命令、实际结果和 Firewall action
 日志，不包含脚本执行过程；`summary.json` 提供机器可读结果。
 `FAIL` 或 `PENDING_INGESTION` 都返回非零；只有明确未启用的功能记录 `SKIP`。
@@ -271,7 +276,9 @@ terraform -chdir=infra apply \
   -input=false -auto-approve \
   "$(pwd)/.local/plan.tfplan"
 
-CHECKPOINT_RECONCILE_SSH_RULE=true ./scripts/configure-policy.sh
+CHECKPOINT_RECONCILE_SSH_RULE=true \
+  CHECKPOINT_TRANSPORT=ssh \
+  ./scripts/configure-policy.sh
 ./scripts/run-tests.sh
 ```
 

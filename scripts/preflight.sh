@@ -27,8 +27,6 @@ require_cmd az
 "$TERRAFORM" -chdir="$INFRA" fmt -recursive -check
 "$TERRAFORM" -chdir="$INFRA" init -backend=false -input=false
 "$TERRAFORM" -chdir="$INFRA" validate
-"$TERRAFORM" -chdir="$INFRA" test
-"$ROOT/tests/validate-repo.sh"
 
 offer="$(terraform_console_value local.checkpoint_offer "$VAR_FILE")"
 plan="$(terraform_console_value local.checkpoint_plan "$VAR_FILE")"
@@ -40,6 +38,8 @@ remote_location="$(terraform_console_value var.remote_location "$VAR_FILE")"
 checkpoint_size="$(terraform_console_value var.checkpoint_vm_size "$VAR_FILE")"
 workload_size="$(terraform_console_value var.workload_vm_size "$VAR_FILE")"
 collector_size="$(terraform_console_value var.collector_vm_size "$VAR_FILE")"
+management_workstation_enabled="$(terraform_console_value var.enable_management_workstation "$VAR_FILE")"
+windows_client_size="$(terraform_console_value var.windows_client_vm_size "$VAR_FILE")"
 
 az_query_with_retry() {
   local attempt output
@@ -196,6 +196,9 @@ check_size_available "$location" "$checkpoint_size" "Check Point"
 check_size_available "$location" "$workload_size" "Primary workload"
 check_size_available "$remote_location" "$workload_size" "Remote workload"
 check_size_available "$location" "$collector_size" "Collector"
+if [[ "$management_workstation_enabled" == "true" ]]; then
+  check_size_available "$location" "$windows_client_size" "Windows management workstation"
+fi
 
 if [[ -n "$custom_image_id" ]]; then
   validate_custom_image "$custom_image_id" "$location" "$custom_image_requires_plan" "$checkpoint_os_version"

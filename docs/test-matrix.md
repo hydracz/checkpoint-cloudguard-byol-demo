@@ -18,9 +18,15 @@
 | T14 | 镜像与 Plan 模式 | Azure VM image reference 和 `plan` | 精确匹配 custom image ID；有 Plan 模式字段完整，无 Plan 模式为 `null`。 |
 | T15 | Guest Gaia 版本 | Gateway `clish -c "show version all"` | 与 `checkpoint_os_version` 对应。 |
 | T16 | 东西向源地址保留 | 远端 workload 的 `demo-web` journal | 请求源为主 workload IP，不是 Gateway Hide NAT 地址。 |
-| T17 | 管理 NSG rules | Azure NSG rule list | 4 条管理端口规则均为 Allow，且 source prefixes 与 `management_cidrs` 完全一致。 |
+| T17 | 私网管理 NIC NSG rules | Azure NSG/NIC | `eth0` 的 4 条管理规则匹配可信来源并显式拒绝其他 VNet；NIC 绑定正确；frontend/backend NSG 不允许公网来源访问管理端口。 |
 
-运行：
+本地 Terraform/mock tests 独立运行，不属于部署流程：
+
+```bash
+./scripts/test.sh
+```
+
+完成 SmartConsole/Gaia 手工配置后，再运行数据路径测试：
 
 ```bash
 ./scripts/run-tests.sh

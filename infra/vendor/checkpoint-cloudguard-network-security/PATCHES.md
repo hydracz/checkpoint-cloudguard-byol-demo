@@ -105,3 +105,28 @@ R81；本地校验同步接受这两个值，使相同的 `cloud-init` 首次配
 上游 NSG module 只读取单个 `source_address_prefix`。本地副本同时支持 AzureRM 的
 `source_address_prefixes`，使同一管理端口的一条 rule 可以包含全部
 `management_cidrs`，避免按 CIDR 复制规则。每条 rule 仍只能设置单数或复数字段之一。
+
+## Patch 8：三网卡与独立私有管理平面
+
+涉及文件：
+
+- `modules/common/vnet/variables.tf`
+- `modules/common/vnet/locals.tf`
+- `modules/common/vnet/main.tf`
+- `modules/single-gateway/variables.tf`
+- `modules/single-gateway/main.tf`
+- `modules/single-gateway/outputs.tf`
+
+上游 Single Gateway 固定创建两个 subnet/NIC，并把带 Public IP 的 frontend NIC 作为
+Azure primary NIC（Gaia `eth0`）。本地扩展为三个 subnet/NIC：
+
+1. `eth0`：独立 management subnet，仅私网 IP，作为 Azure primary NIC。
+2. `eth1`：frontend/external subnet，绑定原有 Standard Public IP。
+3. `eth2`：backend/internal subnet，继续作为受保护网络的 NVA next hop。
+
+management NIC 使用独立 NSG；frontend/backend 继续共用数据平面 NSG。VNet module
+仍保持 `[frontend, backend, management]` 的 subnet 输出顺序，以保留原有 frontend/
+backend route-table 索引；VM 的 NIC attach 顺序则显式为
+`[management, frontend, backend]`。新增 management subnet、NIC、NSG 和私网 IP
+outputs，供同 subnet 的 Windows/SmartConsole 管理工作站使用。两个 NSG 名称均包含
+`single_gateway_name`，避免未来同 Resource Group 部署多个 Gateway 时发生名称冲突。

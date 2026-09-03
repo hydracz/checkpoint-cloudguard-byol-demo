@@ -50,7 +50,17 @@ output "checkpoint_vm_name" {
 
 output "checkpoint_nsg_id" {
   value       = module.checkpoint.nsg_id
-  description = "Gateway Network Security Group resource ID."
+  description = "Gateway frontend/backend data-plane Network Security Group resource ID."
+}
+
+output "checkpoint_management_nsg_id" {
+  value       = module.checkpoint.management_nsg_id
+  description = "Private management NIC Network Security Group resource ID."
+}
+
+output "checkpoint_management_nic_id" {
+  value       = module.checkpoint.management_nic_id
+  description = "Dedicated Check Point eth0 management NIC resource ID."
 }
 
 output "checkpoint_gateway_name" {
@@ -60,12 +70,12 @@ output "checkpoint_gateway_name" {
 
 output "checkpoint_public_ip" {
   value       = module.checkpoint.public_ip_address
-  description = "Public IP used for restricted administration and optional north-south ingress."
+  description = "Frontend eth1 Public IP used for data-plane egress and optional north-south ingress; no management ports are opened."
 }
 
 output "checkpoint_management_url" {
-  value       = "https://${module.checkpoint.public_ip_address}"
-  description = "Gaia Portal URL."
+  value       = "https://${module.checkpoint.management_private_ip_address}"
+  description = "Private Gaia Portal URL reachable from the management subnet."
 }
 
 output "checkpoint_admin_username" {
@@ -75,12 +85,17 @@ output "checkpoint_admin_username" {
 
 output "checkpoint_frontend_private_ip" {
   value       = module.checkpoint.frontend_private_ip_address
-  description = "Gateway external NIC private IP."
+  description = "Gateway eth1 external/frontend private IP."
+}
+
+output "checkpoint_management_private_ip" {
+  value       = module.checkpoint.management_private_ip_address
+  description = "Dedicated eth0 management private IP used by Gaia Portal, SSH, and SmartConsole."
 }
 
 output "checkpoint_backend_private_ip" {
   value       = module.checkpoint.backend_private_ip_address
-  description = "NVA next-hop address used by both spokes."
+  description = "Gateway eth2 internal/backend NVA next-hop address used by both spokes."
 }
 
 output "collector_private_ip" {
@@ -146,7 +161,48 @@ output "skip_policy_configuration" {
 
 output "management_cidrs" {
   value       = local.management_cidrs
-  description = "Administrator CIDRs admitted to SSH, Gaia Portal, and SmartConsole; defaults to all IPv4 sources."
+  description = "Effective private administrator CIDRs admitted to eth0 SSH, Gaia Portal, and SmartConsole; always includes the management subnet."
+}
+
+output "configured_management_cidrs" {
+  value       = distinct(var.management_cidrs)
+  description = "Additional trusted private/VPN administrator CIDRs configured by the operator."
+}
+
+output "management_subnet_id" {
+  value       = module.checkpoint.management_subnet_id
+  description = "Subnet shared by the Check Point management NIC and Windows management workstation."
+}
+
+output "management_workstation_enabled" {
+  value       = var.enable_management_workstation
+  description = "Whether the private Windows SmartConsole workstation and Azure Bastion are deployed."
+}
+
+output "windows_client_vm_name" {
+  value       = try(azurerm_windows_virtual_machine.management[0].name, null)
+  description = "Private Windows Server workstation intended for future Check Point SmartConsole installation."
+}
+
+output "windows_client_private_ip" {
+  value       = var.enable_management_workstation ? local.windows_client_ip : null
+  description = "Private IP of the Windows management workstation."
+}
+
+output "windows_client_admin_username" {
+  value       = var.enable_management_workstation ? var.windows_client_admin_username : null
+  description = "Local administrator username for the Windows management workstation."
+}
+
+output "windows_client_admin_password" {
+  value       = var.enable_management_workstation ? local.windows_client_admin_password : null
+  description = "Local administrator password for the Windows management workstation."
+  sensitive   = true
+}
+
+output "bastion_host_name" {
+  value       = try(azurerm_bastion_host.management[0].name, null)
+  description = "Azure Bastion host used to reach the private Windows workstation."
 }
 
 output "company_domain" {

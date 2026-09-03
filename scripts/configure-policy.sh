@@ -48,9 +48,10 @@ COMPANY_DOMAIN="$(output_value company_domain)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 RG="$(output_value resource_group_name)"
 GATEWAY_VM="$(output_value checkpoint_vm_name)"
-GATEWAY_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_nsg_id.value // ""')"
+MANAGEMENT_NSG_ID="$(printf '%s' "$outputs" | jq -r '.checkpoint_management_nsg_id.value // ""')"
 GATEWAY_NAME="$(output_value checkpoint_gateway_name)"
 PACKAGE_NAME="$(output_value policy_package_name)"
+MANAGEMENT_IP="$(output_value checkpoint_management_private_ip)"
 FRONTEND_IP="$(output_value checkpoint_frontend_private_ip)"
 BACKEND_IP="$(output_value checkpoint_backend_private_ip)"
 COLLECTOR_IP="$(output_value collector_private_ip)"
@@ -124,9 +125,10 @@ policy_args=(
   "$CHECKPOINT_RELEASE"
   "$R81_TLS_MANUAL"
   "$SKIP_POLICY_CONFIGURATION"
+  "$MANAGEMENT_IP"
 )
 
-transport="${CHECKPOINT_TRANSPORT:-auto}"
+transport="${CHECKPOINT_TRANSPORT:-ssh}"
 ssh_key="${CHECKPOINT_SSH_PRIVATE_KEY:-$DEFAULT_SSH_PRIVATE_KEY}"
 ssh_wait_seconds="${CHECKPOINT_SSH_WAIT_SECONDS:-1800}"
 ssh_retry_seconds="${CHECKPOINT_SSH_RETRY_SECONDS:-30}"
@@ -170,17 +172,17 @@ if [[ "$transport" == "ssh" && ! -f "$ssh_key" ]]; then
 fi
 
 if [[ "$transport" != "run-command" && "$reconcile_ssh_rule" == "true" ]]; then
-  [[ -n "$GATEWAY_NSG_ID" ]] ||
-    die "CHECKPOINT_RECONCILE_SSH_RULE=true requires a fresh Terraform apply that includes checkpoint_nsg_id."
+  [[ -n "$MANAGEMENT_NSG_ID" ]] ||
+    die "CHECKPOINT_RECONCILE_SSH_RULE=true requires a fresh Terraform apply that includes checkpoint_management_nsg_id."
   trap remove_temporary_restricted_ssh_nsg_rule EXIT
-  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
+  ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$MANAGEMENT_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
 fi
 
 if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
   echo "Waiting up to ${ssh_wait_seconds}s for the ${readiness_description} over Gaia SSH..."
   ssh_deadline=$((SECONDS + ssh_wait_seconds))
   while true; do
-    if ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" \
+    if ssh "${ssh_options[@]}" "admin@$MANAGEMENT_IP" \
       "$readiness_command" \
       >/dev/null 2>&1; then
       use_ssh=true
@@ -188,7 +190,7 @@ if [[ "$transport" != "run-command" && -f "$ssh_key" ]]; then
     fi
     ((SECONDS >= ssh_deadline)) && break
     if [[ "$reconcile_ssh_rule" == "true" ]]; then
-      ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$GATEWAY_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
+      ensure_restricted_ssh_nsg_rules "$SUBSCRIPTION" "$RG" "$MANAGEMENT_NSG_ID" "$MANAGEMENT_CIDRS_JSON"
     fi
     sleep "$ssh_retry_seconds"
   done
@@ -208,7 +210,7 @@ rm -f \
 
 if $use_ssh; then
   echo "Configuring the Check Point gateway over Gaia SSH as admin."
-  if ! ssh "${ssh_options[@]}" "admin@$PUBLIC_IP" bash -s -- "${policy_args[@]}" \
+  if ! ssh "${ssh_options[@]}" "admin@$MANAGEMENT_IP" bash -s -- "${policy_args[@]}" \
     <"$ROOT/scripts/checkpoint-policy.sh" \
     >"$LOCAL_DIR/checkpoint-policy-output.txt" \
     2>"$LOCAL_DIR/checkpoint-policy-stderr.log"; then

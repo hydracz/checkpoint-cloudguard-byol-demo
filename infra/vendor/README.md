@@ -52,6 +52,12 @@ checkpoint-cloudguard-network-security/
 - `modules/common/network-security-group/{main,variables}.tf`
   - 支持 AzureRM `source_address_prefixes`
   - 同一管理端口的一条 NSG rule 可包含多个管理员 CIDR
+- `modules/common/vnet/{variables,locals,main}.tf`
+  - subnet 上限从两个扩展到三个，并支持读取已有 management subnet
+- `modules/single-gateway/{variables,main,outputs}.tf`
+  - 增加独立 management subnet、NIC 和 NSG
+  - VM NIC 顺序改为 `eth0=management`、`eth1=frontend`、`eth2=backend`
+  - Public IP 只绑定 frontend `eth1`；management `eth0` 只保留私网地址
 
 除 `PATCHES.md` 明确记录的修改外，Check Point module 的资源逻辑、变量和
 cloud-init 保持上游实现。

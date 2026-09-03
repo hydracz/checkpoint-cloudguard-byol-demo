@@ -31,6 +31,14 @@ DESTINATION_RESOURCE_ID="$(terraform_output_raw audit_storage_account_id)"
 EXPORT_NAME="$(terraform_output_raw log_analytics_data_export_name)"
 EXPORT_ID="$WORKSPACE_RESOURCE_ID/dataExports/$EXPORT_NAME"
 AUTO_VARS="$INFRA/audit.auto.tfvars.json"
+SYSLOG_QUERY_ERROR="$LOCAL_DIR/azure-query-error.log"
+SYSLOG_TABLE_WAIT_SECONDS="${SYSLOG_TABLE_WAIT_SECONDS:-1800}"
+SYSLOG_TABLE_RETRY_SECONDS="${SYSLOG_TABLE_RETRY_SECONDS:-30}"
+
+[[ "$SYSLOG_TABLE_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
+  die "SYSLOG_TABLE_WAIT_SECONDS must be a positive integer."
+[[ "$SYSLOG_TABLE_RETRY_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
+  die "SYSLOG_TABLE_RETRY_SECONDS must be a positive integer."
 
 emit_bootstrap_syslog() {
   az vm run-command invoke \
@@ -44,22 +52,25 @@ emit_bootstrap_syslog() {
 }
 
 syslog_table_has_data() {
-  local result
-  if ! result="$(az monitor log-analytics query \
+  local record_count
+  if ! record_count="$(az monitor log-analytics query \
     --subscription "$SUBSCRIPTION" \
     --workspace "$WORKSPACE" \
-    --analytics-query "Syslog | where TimeGenerated > ago(1h) | take 1" \
+    --analytics-query "Syslog | where TimeGenerated > ago(1h) | count" \
+    --query '[0].Count' \
     --only-show-errors \
-    -o json 2>/dev/null)"; then
+    -o tsv 2>"$SYSLOG_QUERY_ERROR")"; then
     return 1
   fi
-  printf '%s' "$result" |
-    jq -e '
-      if type == "array" then length > 0
-      elif (.tables? | type) == "array" then (.tables[0].rows | length) > 0
-      else false
-      end
-    ' >/dev/null
+
+  record_count="${record_count//$'\r'/}"
+  if [[ ! "$record_count" =~ ^[0-9]+$ ]]; then
+    printf 'Azure CLI returned unexpected non-numeric query output: %q\n' \
+      "$record_count" >"$SYSLOG_QUERY_ERROR"
+    return 1
+  fi
+
+  ((record_count > 0))
 }
 
 apply_export_configuration() {
@@ -131,17 +142,28 @@ if ! terraform_state_has 'azurerm_log_analytics_data_export_rule.syslog[0]'; the
     echo "Waiting for Azure Monitor Agent to create the Syslog table..."
     emit_bootstrap_syslog
     table_ready=false
-    for attempt in $(seq 1 30); do
+    max_attempts=$(((
+      SYSLOG_TABLE_WAIT_SECONDS + SYSLOG_TABLE_RETRY_SECONDS - 1
+    ) / SYSLOG_TABLE_RETRY_SECONDS))
+    for attempt in $(seq 1 "$max_attempts"); do
       if syslog_table_has_data; then
         table_ready=true
         break
       fi
       if ((attempt % 5 == 0)); then
+        echo "Syslog is not queryable yet (${attempt}/${max_attempts}); sending another bootstrap record."
         emit_bootstrap_syslog
       fi
-      sleep 30
+      ((attempt < max_attempts)) && sleep "$SYSLOG_TABLE_RETRY_SECONDS"
     done
-    $table_ready || die "Syslog table was not queryable after 15 minutes; continuous export was not created."
+    if ! $table_ready; then
+      if [[ -s "$SYSLOG_QUERY_ERROR" ]]; then
+        echo "Last Azure Log Analytics query error:" >&2
+        sed -n '1,12p' "$SYSLOG_QUERY_ERROR" >&2
+      fi
+      die "Syslog table was not queryable after ${SYSLOG_TABLE_WAIT_SECONDS}s; continuous export was not created. Check the collector VM, Azure Monitor Agent, and DCR association."
+    fi
+    rm -f "$SYSLOG_QUERY_ERROR"
 
     printf '{"enable_log_data_export":true}\n' >"$AUTO_VARS"
     apply_export_configuration
@@ -159,5 +181,5 @@ az vm run-command invoke \
   --only-show-errors \
   -o none
 
-"$TERRAFORM" -chdir="$INFRA" output -json >"$LOCAL_DIR/latest-deployment-outputs.json"
+write_terraform_outputs
 echo "Continuous Syslog export to the immutable container is enabled."

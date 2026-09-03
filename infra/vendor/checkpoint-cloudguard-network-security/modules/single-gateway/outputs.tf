@@ -24,22 +24,37 @@ output "vnet_id" {
 }
 
 output "subnet_ids" {
-  description = "The IDs of the subnets used by the gateway [frontend, backend]."
+  description = "The IDs of the subnets used by the gateway [frontend, backend, management]."
   value       = module.vnet.subnets
 }
 
 output "nsg_id" {
-  description = "The ID of the Network Security Group associated with the gateway."
+  description = "The ID of the data-plane Network Security Group associated with the frontend and backend."
   value       = module.network_security_group.id
 }
 
+output "management_nsg_id" {
+  description = "The ID of the Network Security Group associated with the dedicated management interface."
+  value       = module.management_network_security_group.id
+}
+
+output "management_subnet_id" {
+  description = "The ID of the subnet shared by the gateway management interface and management clients."
+  value       = module.vnet.subnets[2]
+}
+
+output "management_nic_id" {
+  description = "The ID of the dedicated management (eth0) network interface."
+  value       = azurerm_network_interface.management.id
+}
+
 output "frontend_nic_id" {
-  description = "The ID of the frontend (eth0) network interface."
+  description = "The ID of the frontend (eth1) network interface."
   value       = azurerm_network_interface.nic.id
 }
 
 output "backend_nic_id" {
-  description = "The ID of the backend (eth1) network interface."
+  description = "The ID of the backend (eth2) network interface."
   value       = azurerm_network_interface.nic1.id
 }
 
@@ -61,6 +76,11 @@ output "public_ipv6_address" {
 output "frontend_private_ip_address" {
   description = "The primary private IPv4 address of the gateway's frontend interface."
   value       = azurerm_network_interface.nic.ip_configuration[0].private_ip_address
+}
+
+output "management_private_ip_address" {
+  description = "The private IPv4 address of the gateway's dedicated management interface."
+  value       = azurerm_network_interface.management.ip_configuration[0].private_ip_address
 }
 
 output "backend_private_ip_address" {

@@ -165,7 +165,7 @@ has_management_cidrs = bool(
 management_sources = []
 for start, end in legacy_blocks:
     for value in strings_in_block(text[start:end]):
-        if value not in management_sources:
+        if value != "0.0.0.0/0" and value not in management_sources:
             management_sources.append(value)
 
 if legacy_blocks:
@@ -175,7 +175,7 @@ if legacy_blocks:
             f"  {json.dumps(value, ensure_ascii=False)}," for value in management_sources
         )
         replacement = (
-            "# Administrator sources for SSH, Gaia Portal, and SmartConsole.\n"
+            "# Additional private/VPN sources for SSH, Gaia Portal, and SmartConsole.\n"
             f"management_cidrs = [\n{entries}\n]\n"
         )
 

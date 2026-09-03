@@ -2,9 +2,12 @@
 
 ## 默认行为
 
-`skip_policy_configuration=true` 为默认值。`configure-policy.sh` 在该模式下不会执行
-`mgmt_cli`，只配置 Gaia 静态路由、GUI Clients 和 `azure-monitor` Log Exporter。
-如需使用本文的规则、对象、TLS CA 和 Policy Install 自动化，先在 tfvars 中设置：
+`deploy.sh` 默认只创建 Azure 基础设施，不调用 `configure-policy.sh`。管理员通过
+Azure Bastion 登录 Windows 管理工作站，在 Gaia Portal / SmartConsole 手工完成路由、
+对象、规则、TLS 和 Log Exporter。
+
+仓库保留 R81/R82 自动化。只有从 `management_subnet_prefix` 或额外可信私网中
+显式运行时，才在 tfvars 设置：
 
 ```hcl
 skip_policy_configuration = false
@@ -20,10 +23,12 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 
 1. 使用 tfvars 中的 `checkpoint_admin_password` 登录 `admin`；部署脚本已配置
    Console 和 Gaia CLI/Portal 密码，SSH 仍使用 `.local/checkpoint-demo-ssh`。
-2. 从 `management_cidrs` 中的来源登录 Terraform output 中的 Gaia Portal 或 SmartConsole 地址；省略该参数时允许所有 IPv4 来源。
+2. 通过 Bastion 登录 Windows，从 `10.60.3.10` 连接 Terraform output 中的
+   `checkpoint_management_private_ip`；Gateway Public IP 不开放管理端口。
 3. 按 Check Point User Center/SmartUpdate 流程激活客户 BYOL。
 4. 确认 Firewall、Application Control、URL Filtering 和 HTTPS Inspection entitlement。
-5. 重新运行 `./scripts/configure-policy.sh`。
+5. 在 SmartConsole 手工配置；或确认允许自动修改后，从管理私网显式运行
+   `CHECKPOINT_TRANSPORT=ssh ./scripts/configure-policy.sh`。
 
 ## Access Control 规则顺序
 
@@ -46,13 +51,12 @@ custom image 或已获授权的 R81 无 Plan custom image。许可证 entitlemen
 出站 Hide NAT。不依赖 R82 才支持的 `nat-hide-internal-interfaces` Management API
 参数，因此 R81/R82 使用相同策略路径；T16 检查远端 Web journal 中的真实来源地址。
 
-`management_cidrs` 是所有管理员操作的来源清单，省略时默认为 `0.0.0.0/0`。Terraform 为
-SSH、Gaia Portal 和 SmartConsole 的每个端口创建一条 NSG rule，并把全部 CIDR 合并到
-该 rule 的 source prefixes；策略脚本用 `cp_conf client createlist`
-同步完整 GUI Clients；仅在 `skip_policy_configuration=false` 且来源受限时为每个 CIDR 创建
-network object 放入 `CloudGuard-SSH-Sources` group。使用默认 `0.0.0.0/0` 时，Check Point
-policy 直接引用内置 `Any`，不会创建 R81 不支持的 `/0` network object。SSH rule 的目标只包含 Gateway object，其他公网来源
-不能访问管理服务。
+有效管理来源始终包含 `management_subnet_prefix`，`management_cidrs` 只追加
+私网/VPN 前缀且拒绝 `0.0.0.0/0`。Terraform 在独立 management NIC NSG 中为
+SSH、Gaia Portal 和 SmartConsole 创建规则；frontend/backend 数据平面 NSG 不允许
+任何 Internet/Public CIDR 访问这些管理端口。
+可选脚本用 `cp_conf client createlist` 同步 GUI Clients；仅在
+`skip_policy_configuration=false` 时为来源创建 policy objects。
 
 可选入站规则是 Geo Inbound 前的窄例外：它同时要求 Azure NSG 和 Check Point
 Policy 命中同一个 `inbound_demo_source_cidr`，且只开放 TCP/18080。这样获批测试
@@ -81,7 +85,7 @@ Gateway 执行 `install-policy`。
 
 ## TLS Inspection
 
-`skip_policy_configuration=false` 且 `enable_tls_inspection=true` 时：
+显式运行自动化且 `skip_policy_configuration=false`、`enable_tls_inspection=true` 时：
 
 - Management API 生成 `CloudGuardDemoOutboundCA`，私钥留在 Management。
 - `issued-by` 使用 `company_domain`；未设置时为 IANA 保留域名 `example.org`。
@@ -113,8 +117,10 @@ r81_tls_manually_configured = true
 ```bash
 export CHECKPOINT_TLS_CA_FILE="<SMARTCONSOLE_EXPORTED_PUBLIC_CA>"
 ./scripts/plan.sh --var-file configs/demo.tfvars
-terraform -chdir=infra apply -input=false -auto-approve .local/plan.tfplan
-./scripts/configure-policy.sh
+terraform -chdir=infra apply \
+  -input=false -auto-approve \
+  "$(pwd)/.local/plan.tfplan"
+CHECKPOINT_TRANSPORT=ssh ./scripts/configure-policy.sh
 ./scripts/run-tests.sh
 ```
 
@@ -135,7 +141,7 @@ bypass、QUIC/HTTP3 策略、证书固定应用测试和终端信任分发。
 
 ## Log Exporter
 
-无论是否启用策略自动化，脚本都配置：
+显式运行 `configure-policy.sh` 时，无论是否启用策略自动化，脚本都配置：
 
 ```text
 name=azure-monitor
@@ -153,17 +159,20 @@ Log Exporter 支持矩阵改为 TCP/TLS，并配置 CA 和 client certificate。
 与空 workspace 同时创建。`enable-audit-export.sh` 先通过日志收集 VM 的
 `logger` 产生记录，等到表可查询后写入 gitignored
 `infra/audit.auto.tfvars.json`，再创建 Export Rule。该文件让后续 plan 保留
-Export Rule。
+Export Rule。脚本使用 `Syslog | ... | count` 的 TSV 数值，不把 Azure CLI 文本错误
+传给 `jq`。默认最多等待 1800 秒、每 30 秒重试；可通过
+`SYSLOG_TABLE_WAIT_SECONDS`、`SYSLOG_TABLE_RETRY_SECONDS` 调整。失败时最后一次
+Azure 查询错误保存在 `.local/azure-query-error.log`。
 
 ## 重复执行与恢复
 
-- `CHECKPOINT_TRANSPORT=auto` 默认通过 Gaia SSH 等待所需命令最多 30 分钟，再回退到
-  Azure Run Command；跳过策略时不探测 Management API。可用
+- `CHECKPOINT_TRANSPORT=ssh` 是默认值，只通过私网 `checkpoint_management_private_ip`
+  运行自动化。`auto` / `run-command` 仅作为显式 break-glass 选项，不属于正常流程。可用
   `CHECKPOINT_SSH_WAIT_SECONDS` 和 `CHECKPOINT_SSH_RETRY_SECONDS` 调整。
 - 若测试订阅自动删除 Terraform-managed SSH rules，在确认允许恢复后设置
   `CHECKPOINT_RECONCILE_SSH_RULE=true`。脚本按 `management_cidrs` output 临时恢复一条
   包含全部 source prefixes 的 TCP/22 rule，并在操作结束时删除它；默认 `false`，不会自动对抗
-  组织 Policy。省略 `management_cidrs` 时来源为 `0.0.0.0/0`。
+  组织 Policy。省略 `management_cidrs` 时来源只有 management subnet。
 - `configure-policy.sh` 可重复执行；默认只协调 Gaia/Log Exporter。设置
   `skip_policy_configuration=false` 后才重建 `CloudGuard Demo - ` 规则、NAT 规则和
   `CloudGuard-*` 演示对象。

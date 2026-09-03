@@ -280,6 +280,12 @@ variable "backend_subnet_name" {
   type        = string
 }
 
+variable "management_subnet_name" {
+  description = "The Virtual Network subnet name for the dedicated management interface."
+  type        = string
+  default     = "Management"
+}
+
 variable "address_space" {
   description = "The address space that is used by a Virtual Network."
   type        = string
@@ -287,19 +293,60 @@ variable "address_space" {
 }
 
 variable "subnet_prefixes" {
-  description = "Address prefix to be used for network subnets."
+  description = "Address prefixes for the frontend, backend, and management subnets, in that order."
   type        = list(string)
-  default     = ["10.0.0.0/24", "10.0.1.0/24"]
+  default     = ["10.0.0.0/24", "10.0.1.0/24", "10.0.2.0/24"]
+}
+
+variable "management_nsg_id" {
+  description = "Optional existing Network Security Group ID for the dedicated management interface."
+  type        = string
+  default     = ""
+}
+
+variable "management_security_rules" {
+  description = "Security rules for the dedicated management interface Network Security Group."
+  type = list(object({
+    name                       = string
+    priority                   = string
+    direction                  = string
+    access                     = string
+    protocol                   = string
+    source_port_ranges         = string
+    destination_port_ranges    = string
+    description                = string
+    source_address_prefix      = optional(string)
+    source_address_prefixes    = optional(list(string))
+    destination_address_prefix = string
+  }))
+  default = []
+}
+
+variable "management_private_ip_host" {
+  description = "Host number in the management subnet for the eth0 private IP."
+  type        = number
+  default     = 4
+}
+
+variable "management_private_ip" {
+  description = "Optional explicit private IPv4 address for eth0. If empty, the address is derived from management_private_ip_host and the management subnet prefix."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.management_private_ip == "" || can(cidrhost("${var.management_private_ip}/32", 0))
+    error_message = "Variable [management_private_ip] must be empty or a valid IPv4 address."
+  }
 }
 
 variable "frontend_private_ip_host" {
-  description = "Host number in frontend subnet for eth0 private IP."
+  description = "Host number in frontend subnet for eth1 private IP."
   type        = number
   default     = 4
 }
 
 variable "frontend_private_ip" {
-  description = "Optional explicit private IPv4 address for eth0. If empty, the address is derived from frontend_private_ip_host and the frontend subnet prefix."
+  description = "Optional explicit private IPv4 address for eth1. If empty, the address is derived from frontend_private_ip_host and the frontend subnet prefix."
   type        = string
   default     = ""
 
@@ -310,13 +357,13 @@ variable "frontend_private_ip" {
 }
 
 variable "backend_private_ip_host" {
-  description = "Host number in backend subnet for eth1 private IP."
+  description = "Host number in backend subnet for eth2 private IP."
   type        = number
   default     = 4
 }
 
 variable "backend_private_ip" {
-  description = "Optional explicit private IPv4 address for eth1. If empty, the address is derived from backend_private_ip_host and the backend subnet prefix."
+  description = "Optional explicit private IPv4 address for eth2. If empty, the address is derived from backend_private_ip_host and the backend subnet prefix."
   type        = string
   default     = ""
 
@@ -346,7 +393,7 @@ variable "vnet_ipv6_address_space" {
 variable "subnet_ipv6_prefixes" {
   description = "IPv6 address prefixes to be used for network subnets."
   type        = list(string)
-  default     = ["ace:cab:deca:deed::/64", "ace:cab:deca:deee::/64"]
+  default     = ["ace:cab:deca:deed::/64", "ace:cab:deca:deee::/64", "ace:cab:deca:deef::/64"]
 }
 
 variable "nsg_id" {

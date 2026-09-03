@@ -10,11 +10,10 @@ remote_location = "northeurope"
 # Gaia CLI/Portal. SSH continues to use the generated or supplied public key.
 checkpoint_admin_password = "REPLACE_ME"
 
-# Optional. Omit management_cidrs to allow all IPv4 administrator sources.
-# For restricted access, put the deployment operator first.
+# Optional additional private/VPN administrator networks. The management subnet
+# below is always included, and no management service is exposed on Public IP.
 # management_cidrs = [
-#   "203.0.113.10/32",
-#   "198.51.100.20/32",
+#   "10.70.0.0/24",
 # ]
 
 checkpoint_os_version = "R82"
@@ -35,17 +34,25 @@ checkpoint_vm_size = "Standard_D8s_v5" # 8 vCPU / 32 GiB
 workload_vm_size   = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 collector_vm_size  = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 
+# Private Windows Server client and Basic Azure Bastion for future SmartConsole.
+# Leave the password unset to generate it in Terraform state, then retrieve it
+# with: terraform -chdir=infra output -raw windows_client_admin_password
+enable_management_workstation = true
+windows_client_vm_size        = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
+management_subnet_prefix      = "10.60.3.0/24"
+
 # Customer-approved policy examples. Names must match Check Point's English
 # Updatable Object and Application Control catalogs.
 blocked_countries    = ["China"]
 blocked_applications = ["P2P File Sharing"]
 blocked_urls         = ["example.com", "httpbin.org/anything/blocked"]
 
-# Default: do not call the Check Point Management API to add objects, rules, or
-# install policy. Gaia routing, management access, and Log Exporter still run.
+# deploy.sh never configures Gaia routes, Log Exporter, objects, rules, or policy.
+# These flags apply only if configure-policy.sh is run later from the private
+# management network.
 skip_policy_configuration = true
 # Used only when skip_policy_configuration = false.
-enable_tls_inspection = true
+enable_tls_inspection = false
 
 # Disabled by default to avoid exposing a service. When enabled, use a
 # restricted source CIDR; Terraform rejects 0.0.0.0/0.

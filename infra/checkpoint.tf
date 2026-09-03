@@ -41,17 +41,21 @@ module "checkpoint" {
   management_GUI_client_network = local.primary_management_cidr
 
   vnet_name                       = local.hub_vnet_name
+  management_subnet_name          = "management"
   frontend_subnet_name            = "checkpoint-frontend"
   backend_subnet_name             = "checkpoint-backend"
   address_space                   = var.hub_address_space
-  subnet_prefixes                 = [var.checkpoint_frontend_subnet_prefix, var.checkpoint_backend_subnet_prefix]
+  subnet_prefixes                 = [var.checkpoint_frontend_subnet_prefix, var.checkpoint_backend_subnet_prefix, var.management_subnet_prefix]
+  management_private_ip           = local.gateway_management_ip
   frontend_private_ip             = local.gateway_frontend_ip
   backend_private_ip              = local.gateway_backend_ip
   enable_ipv6                     = false
   nsg_id                          = ""
+  management_nsg_id               = ""
   storage_account_deployment_mode = "Managed"
   storage_account_type            = "Standard_LRS"
   add_storage_account_ip_rules    = false
   storage_account_additional_ips  = []
   security_rules                  = local.checkpoint_security_rules
+  management_security_rules       = local.checkpoint_management_security_rules
 }

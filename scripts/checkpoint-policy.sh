@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 20 ]]; then
-  echo "Expected 20 arguments; received $#." >&2
+if [[ $# -ne 21 ]]; then
+  echo "Expected 21 arguments; received $#." >&2
   exit 2
 fi
 
@@ -26,6 +26,7 @@ COMPANY_DOMAIN="${17}"
 CHECKPOINT_RELEASE="${18}"
 R81_TLS_MANUAL="${19}"
 SKIP_POLICY_CONFIGURATION="${20}"
+MANAGEMENT_IP="${21}"
 
 RULE_PREFIX="CloudGuard Demo - "
 HTTPS_LAYER="CloudGuard Demo Outbound HTTPS"
@@ -99,6 +100,8 @@ if jq -e 'length == 1 and .[0] == "0.0.0.0/0"' <<<"$MANAGEMENT_CIDRS_JSON" >/dev
 fi
 
 BACKEND_AZURE_GATEWAY="${BACKEND_IP%.*}.1"
+FRONTEND_AZURE_GATEWAY="${FRONTEND_IP%.*}.1"
+MANAGEMENT_AZURE_GATEWAY="${MANAGEMENT_IP%.*}.1"
 COLLECTOR_CIDR="${COLLECTOR_IP%.*}.0/24"
 
 GUI_CLIENTS=()
@@ -120,11 +123,18 @@ done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
 }
 
 configure_gaia_baseline() {
-  local internal_cidr
+  local internal_cidr management_cidr
+  clish -c "set static-route default nexthop gateway address $FRONTEND_AZURE_GATEWAY on" ||
+    return 1
   for internal_cidr in "$EU_CIDR" "$REMOTE_CIDR" "$COLLECTOR_CIDR"; do
     clish -c "set static-route $internal_cidr nexthop gateway address $BACKEND_AZURE_GATEWAY on" ||
       return 1
   done
+  while IFS= read -r management_cidr; do
+    [[ "$management_cidr" == "$MANAGEMENT_CIDR" ]] && continue
+    clish -c "set static-route $management_cidr nexthop gateway address $MANAGEMENT_AZURE_GATEWAY on" ||
+      return 1
+  done < <(printf '%s' "$MANAGEMENT_CIDRS_JSON" | jq -e -r '.[]')
   clish -c "save config" || return 1
   if $SYNC_GUI_CLIENTS; then
     cp_conf client createlist "${GUI_CLIENTS[@]}" >/dev/null || return 1
@@ -262,8 +272,12 @@ api set access-layer \
 GATEWAYS_JSON="$(api show gateways-and-servers limit 100 details-level full)"
 GATEWAY_OBJECT="$(
   printf '%s' "$GATEWAYS_JSON" |
-    jq -e -c --arg name "$GATEWAY_NAME" --arg ip "$FRONTEND_IP" '
-      [.objects[] | select(.name == $name or ."ipv4-address" == $ip)][0]
+    jq -e -c --arg name "$GATEWAY_NAME" --arg management_ip "$MANAGEMENT_IP" --arg frontend_ip "$FRONTEND_IP" '
+      [.objects[] | select(
+        .name == $name or
+        ."ipv4-address" == $management_ip or
+        ."ipv4-address" == $frontend_ip
+      )][0]
     '
 )"
 GATEWAY_UID="$(printf '%s' "$GATEWAY_OBJECT" | jq -e -r '.uid')"
@@ -276,16 +290,20 @@ api set simple-gateway \
   application-control true \
   url-filtering true \
   interfaces.1.name eth0 \
-  interfaces.1.ipv4-address "$FRONTEND_IP" \
+  interfaces.1.ipv4-address "$MANAGEMENT_IP" \
   interfaces.1.ipv4-network-mask 255.255.255.0 \
-  interfaces.1.anti-spoofing true \
-  interfaces.1.topology external \
+  interfaces.1.anti-spoofing false \
   interfaces.2.name eth1 \
-  interfaces.2.ipv4-address "$BACKEND_IP" \
+  interfaces.2.ipv4-address "$FRONTEND_IP" \
   interfaces.2.ipv4-network-mask 255.255.255.0 \
   interfaces.2.anti-spoofing true \
-  interfaces.2.topology internal \
-  interfaces.2.topology-settings.ip-address-behind-this-interface "network defined by routing" \
+  interfaces.2.topology external \
+  interfaces.3.name eth2 \
+  interfaces.3.ipv4-address "$BACKEND_IP" \
+  interfaces.3.ipv4-network-mask 255.255.255.0 \
+  interfaces.3.anti-spoofing true \
+  interfaces.3.topology internal \
+  interfaces.3.topology-settings.ip-address-behind-this-interface "network defined by routing" \
   >/dev/null
 
 ACCESS_RULEBASE="$(api show access-rulebase name "$ACCESS_LAYER" limit 500 details-level standard)"

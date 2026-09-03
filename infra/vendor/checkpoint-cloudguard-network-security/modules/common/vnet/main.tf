@@ -158,3 +158,10 @@ data "azurerm_subnet" "backend" {
   virtual_network_name = var.vnet_name
   resource_group_name  = var.existing_vnet_resource_group
 }
+
+data "azurerm_subnet" "management" {
+  count                = !local.create_new_vnet && length(var.subnet_names) >= 3 ? 1 : 0
+  name                 = var.subnet_names[2]
+  virtual_network_name = var.vnet_name
+  resource_group_name  = var.existing_vnet_resource_group
+}

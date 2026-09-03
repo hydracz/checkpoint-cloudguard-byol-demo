@@ -13,11 +13,13 @@ locals {
     "clish -c 'save config'",
   ])
 
-  gateway_frontend_ip = cidrhost(var.checkpoint_frontend_subnet_prefix, 4)
-  gateway_backend_ip  = cidrhost(var.checkpoint_backend_subnet_prefix, 4)
-  collector_ip        = cidrhost(var.collector_subnet_prefix, 4)
-  eu_workload_ip      = cidrhost(var.eu_workload_subnet_prefix, 4)
-  remote_workload_ip  = cidrhost(var.remote_workload_subnet_prefix, 4)
+  gateway_frontend_ip   = cidrhost(var.checkpoint_frontend_subnet_prefix, 4)
+  gateway_backend_ip    = cidrhost(var.checkpoint_backend_subnet_prefix, 4)
+  gateway_management_ip = cidrhost(var.management_subnet_prefix, 4)
+  collector_ip          = cidrhost(var.collector_subnet_prefix, 4)
+  windows_client_ip     = cidrhost(var.management_subnet_prefix, 10)
+  eu_workload_ip        = cidrhost(var.eu_workload_subnet_prefix, 4)
+  remote_workload_ip    = cidrhost(var.remote_workload_subnet_prefix, 4)
 
   gateway_name           = "${var.prefix}-gateway"
   hub_vnet_name          = "${var.prefix}-hub-vnet"
@@ -35,8 +37,13 @@ locals {
     all = local.base_tags
   }
 
-  management_cidrs        = distinct(var.management_cidrs)
-  primary_management_cidr = try(local.management_cidrs[0], "0.0.0.0/0")
+  management_cidrs        = distinct(concat([var.management_subnet_prefix], var.management_cidrs))
+  primary_management_cidr = var.management_subnet_prefix
+  windows_client_admin_password = (
+    var.windows_client_admin_password != "" ?
+    var.windows_client_admin_password :
+    try(random_password.windows_client[0].result, null)
+  )
   management_service_ports = [
     { name = "SSH", port = "22" },
     { name = "GaiaPortal", port = "443" },
@@ -44,7 +51,7 @@ locals {
     { name = "SmartConsole19009", port = "19009" },
   ]
 
-  checkpoint_management_security_rules = [
+  checkpoint_management_allow_rules = [
     for service_index, service in local.management_service_ports : {
       name                       = "AllowRestricted${service.name}"
       priority                   = tostring(100 + service_index)
@@ -54,12 +61,28 @@ locals {
       source_port_ranges         = "*"
       destination_port_ranges    = service.port
       description                = "${service.name} access from configured management CIDRs"
+      source_address_prefix      = null
       source_address_prefixes    = local.management_cidrs
       destination_address_prefix = "*"
     }
   ]
+  checkpoint_management_security_rules = concat(local.checkpoint_management_allow_rules, [
+    {
+      name                       = "DenyOtherVnetManagement"
+      priority                   = "200"
+      direction                  = "Inbound"
+      access                     = "Deny"
+      protocol                   = "*"
+      source_port_ranges         = "*"
+      destination_port_ranges    = "*"
+      description                = "Deny management traffic from other virtual-network sources"
+      source_address_prefix      = "VirtualNetwork"
+      source_address_prefixes    = null
+      destination_address_prefix = "*"
+    }
+  ])
 
-  checkpoint_security_rules = concat(local.checkpoint_management_security_rules, [
+  checkpoint_security_rules = concat([
     {
       name                       = "AllowEUProtectedNetwork"
       priority                   = "500"

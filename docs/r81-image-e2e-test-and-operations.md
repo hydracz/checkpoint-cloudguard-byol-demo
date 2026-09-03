@@ -92,12 +92,11 @@ prefix              = "cpr81"
 company_domain      = "example.org"
 checkpoint_admin_password = "<STRONG_GAIA_ADMIN_PASSWORD>"
 
-# 所有管理员来源统一写在一个列表；当前部署出口必须放在首项。
+# 可选：management subnet 会自动加入，这里只写额外 VPN/运维私网。
 management_cidrs = [
-  "<CURRENT_PUBLIC_IPV4>/32",
-  "<SECOND_PUBLIC_IPV4>/32",
-  "<APPROVED_OFFICE_CIDR>",
+  "<APPROVED_PRIVATE_OR_VPN_CIDR>",
 ]
+management_subnet_prefix = "10.60.3.0/24"
 
 location        = "northeurope"
 remote_location = "westeurope"
@@ -119,10 +118,10 @@ enable_inbound_demo      = true
 inbound_demo_source_cidr = "<CURRENT_PUBLIC_IPV4>/32"
 ```
 
-本 E2E 显式填写 `management_cidrs` 以限制管理员来源；当前默认值是
-`["0.0.0.0/0"]`。Terraform 接受 1-50 个 CIDR，为 SSH、Gaia Portal 和 SmartConsole
-的每个端口创建一条包含全部来源的 NSG rule。上游模块
-首次启动只能接收一个 network，因此首项用于 bootstrap；策略配置随后用
+当前默认管理来源是 `management_subnet_prefix`；`management_cidrs` 只追加可信
+私网/VPN，拒绝 `0.0.0.0/0`。Terraform 在独立 `eth0` management NIC NSG 中为
+SSH、Gaia Portal 和 SmartConsole 创建规则。首次启动使用 management subnet；
+可选策略脚本随后用
 `cp_conf client createlist` 同步完整 GUI Clients，并把同一列表写入
 `CloudGuard-SSH-Sources`，避免 Azure 与 Gateway 管理来源不一致。
 
@@ -147,25 +146,12 @@ git check-ignore -v .local/checkpoint-demo-ssh .local/checkpoint-demo-ssh.pub
 
 ### 3.4 部署
 
-普通客户订阅的 NSG rule 不会被外部策略删除：
-
 ```bash
-unset CHECKPOINT_RECONCILE_SSH_RULE
-./scripts/deploy.sh --var-file configs/r81-e2e.tfvars --skip-policy
+./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
 ```
 
-仅在已知会自动删除 TCP/22 rule 的测试订阅中启用恢复开关：
-
-```bash
-export CHECKPOINT_RECONCILE_SSH_RULE=true
-./scripts/deploy.sh --var-file configs/r81-e2e.tfvars --skip-policy
-```
-
-该开关只按 Terraform output 中的严格限源 CIDR 临时恢复一条缺失的 TCP/22 rule，不会
-创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rule。第一阶段不创建 Access Policy，
-但受限 `management_cidrs` 仍需要同步 R81 GUI Clients，因此部署脚本会等待只读
-`mgmt_cli` 登录和 `cp_log_export` 均就绪后再执行 Gaia baseline。策略、对象和 Policy
-Install 留到第 5.2 节的 `--configure-policy` 第二阶段。
+部署只创建基础设施，不登录 Gaia、不等待 Management API，也不创建 Access Policy。
+通过 Bastion/Windows 手工配置，或在第 5.2 节从私有管理网显式运行保留脚本。
 
 ### 3.5 查看输出并人工登录
 
@@ -173,8 +159,8 @@ Install 留到第 5.2 节的 `--configure-policy` 第二阶段。
 TF="${TERRAFORM:-terraform}"
 SUB="$("$TF" -chdir=infra output -raw subscription_id)"
 RG="$("$TF" -chdir=infra output -raw resource_group_name)"
-IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
-NSG_ID="$("$TF" -chdir=infra output -raw checkpoint_nsg_id)"
+IP="$("$TF" -chdir=infra output -raw checkpoint_management_private_ip)"
+NSG_ID="$("$TF" -chdir=infra output -raw checkpoint_management_nsg_id)"
 NSG="${NSG_ID##*/}"
 KEY="$PWD/.local/checkpoint-demo-ssh"
 
@@ -205,7 +191,8 @@ cp_log_export status
 exit
 ```
 
-预期 guest 为 R81、Access Policy 已安装、`azure-monitor` Log Exporter 为 `Running`。
+首次基础部署后只预期 guest 为 R81；Access Policy 和 `azure-monitor` Log Exporter
+需由 SmartConsole/Gaia 手工配置或后续私网脚本完成。
 Azure VM metadata 中的 `notused` 不是登录用户，必须使用 `admin`。
 
 部署脚本已用 `checkpoint_admin_password` 配置 `admin` 的 Console 和 Gaia
@@ -264,6 +251,7 @@ REMOTE_NIC="$("$TF" -chdir=infra output -raw remote_workload_nic_name)"
 EU_IP="$("$TF" -chdir=infra output -raw eu_workload_private_ip)"
 REMOTE_IP="$("$TF" -chdir=infra output -raw remote_workload_private_ip)"
 NEXT_HOP="$("$TF" -chdir=infra output -raw checkpoint_backend_private_ip)"
+MANAGEMENT_IP="$("$TF" -chdir=infra output -raw checkpoint_management_private_ip)"
 PUBLIC_IP="$("$TF" -chdir=infra output -raw checkpoint_public_ip)"
 GATEWAY_VM="$("$TF" -chdir=infra output -raw checkpoint_vm_name)"
 PACKAGE="$("$TF" -chdir=infra output -raw policy_package_name)"
@@ -332,7 +320,7 @@ ssh \
   -i .local/checkpoint-demo-ssh \
   -o StrictHostKeyChecking=accept-new \
   -o UserKnownHostsFile=.local/known_hosts \
-  "admin@$PUBLIC_IP" \
+  "admin@$MANAGEMENT_IP" \
   bash -s -- "$PACKAGE" R81 \
   <scripts/inspect-checkpoint.sh
 ```
@@ -396,26 +384,35 @@ az vm run-command invoke \
 ### 5.2 再运行完整自动矩阵
 
 当前流程可拆成两个独立阶段。第一阶段部署结束后保留
-`.local/latest-deployment-outputs.json`；第二阶段只需要该文件和可访问客户订阅的
-Azure CLI 身份，不依赖原 Terraform state。
+`.local/latest-deployment-outputs.json`。第二阶段不依赖原 Terraform state，但仍需要：
 
-基础部署已完成、但尚未创建 Check Point policy 时，在完成 BYOL 激活后执行：
+- 该 outputs 文件和可访问客户订阅的 Azure CLI 身份。
+- 部署时的 `.local/checkpoint-demo-ssh` 私钥。
+- 执行机位于 management subnet，或能通过获批 VPN/私网路由访问
+  `checkpoint_management_private_ip`。
+
+基础部署已完成、但尚未创建 Check Point policy 时，在完成 BYOL 激活后，从 management
+私网先运行保留自动化，再独立执行验证：
 
 ```bash
+CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \
+  CHECKPOINT_TRANSPORT=ssh \
+  ./scripts/configure-policy.sh \
+  --outputs-file .local/latest-deployment-outputs.json
+
 ./scripts/validate-existing.sh \
   --outputs-file .local/latest-deployment-outputs.json \
-  --expected-release R81 \
-  --configure-policy
+  --expected-release R81
 ```
 
-如果 policy 已由第一阶段或人工流程配置，去掉 `--configure-policy`，脚本只执行验证。
+如果 policy 已由人工流程配置，直接运行 `validate-existing.sh`。
 仅在测试订阅会删除 TCP/22 rule 时，额外设置
 `CHECKPOINT_RECONCILE_SSH_RULE=true`。生成目录中的 `report.html` 包含部署配置、
 Firewall rules、结果表、每项测试的执行机器、具体命令、实际观察和 Firewall 日志；
 脚本 trace 不进入客户报告。`summary.json` 与
 `configuration.json` 便于机器归档。任何 `FAIL` 或 `PENDING_INGESTION` 都必须处理后重跑；
-只有未启用功能可记录 `SKIP`。T17 额外验证 4 条管理 NSG rules 的 source prefixes 与
-`management_cidrs` 完全一致。
+只有未启用功能可记录 `SKIP`。T17 额外验证 `eth0` 管理 NSG 的 4 条 Allow rule、
+显式 Deny、management NIC 绑定，以及数据平面 NSG 没有公网管理入口。
 如果 R81 已通过 SmartConsole bootstrap 启用 TLS，第二阶段还必须传入
 `--ca-file <SMARTCONSOLE_EXPORTED_PUBLIC_CA>`；测试订阅临时恢复 SSH rule 时，T17 明确记录
 `RECONCILED`，不会把随后删除的 rule 伪记为普通 PASS。

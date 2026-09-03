@@ -23,12 +23,14 @@ locals {
 
   subnets = local.create_new_vnet ? azurerm_subnet.subnet.*.id : (
     length(var.subnet_names) == 1 ? [data.azurerm_subnet.frontend[0].id] :
-    [data.azurerm_subnet.frontend[0].id, data.azurerm_subnet.backend[0].id]
+    length(var.subnet_names) == 2 ? [data.azurerm_subnet.frontend[0].id, data.azurerm_subnet.backend[0].id] :
+    [data.azurerm_subnet.frontend[0].id, data.azurerm_subnet.backend[0].id, data.azurerm_subnet.management[0].id]
   )
 
   subnet_prefixes = local.create_new_vnet ? azurerm_subnet.subnet.*.address_prefixes[*][0] : (
     length(var.subnet_names) == 1 ? [data.azurerm_subnet.frontend[0].address_prefixes[0]] :
-    [data.azurerm_subnet.frontend[0].address_prefixes[0], data.azurerm_subnet.backend[0].address_prefixes[0]]
+    length(var.subnet_names) == 2 ? [data.azurerm_subnet.frontend[0].address_prefixes[0], data.azurerm_subnet.backend[0].address_prefixes[0]] :
+    [data.azurerm_subnet.frontend[0].address_prefixes[0], data.azurerm_subnet.backend[0].address_prefixes[0], data.azurerm_subnet.management[0].address_prefixes[0]]
   )
 
   // For IPv6: Read from existing subnets when using existing VNet, otherwise use provided variables
@@ -36,7 +38,9 @@ locals {
     var.enable_ipv6 ? (
       length(var.subnet_names) == 1 ?
       [data.azurerm_subnet.frontend[0].address_prefixes[1]] :
-      [data.azurerm_subnet.frontend[0].address_prefixes[1], data.azurerm_subnet.backend[0].address_prefixes[1]]
+      length(var.subnet_names) == 2 ?
+      [data.azurerm_subnet.frontend[0].address_prefixes[1], data.azurerm_subnet.backend[0].address_prefixes[1]] :
+      [data.azurerm_subnet.frontend[0].address_prefixes[1], data.azurerm_subnet.backend[0].address_prefixes[1], data.azurerm_subnet.management[0].address_prefixes[1]]
     ) : []
   )
 

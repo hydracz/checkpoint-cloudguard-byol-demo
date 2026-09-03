@@ -1,10 +1,31 @@
 # 现场验证记录与复查方法
 
-本文记录 2026-08-28 到 2026-08-29 UTC（UTC+8 为 2026-08-30）在一个 Azure
-学习订阅中的观察结果。区域容量、许可证状态和 Azure Policy 会随订阅与时间变化；
-这些记录不表示客户环境当前具有相同状态。
+本文记录 2026-08-28 至 2026-09-03 UTC 在一个 Azure 学习订阅中的观察结果。
+区域容量、许可证状态和 Azure Policy 会随订阅与时间变化；这些记录不表示客户环境
+当前具有相同状态。
 
-## 现场环境
+## 2026-09-03 三网卡私网管理基础设施验证
+
+使用 R81 无 Plan Gallery image 从空 Resource Group 完成基础设施部署，未运行
+Check Point policy、Gaia 路由或 Log Exporter 自动化。
+
+| 检查项 | 结果 |
+| --- | --- |
+| Gateway NIC 顺序 | Azure primary `eth0=management 10.60.3.4`、`eth1=frontend 10.60.0.4`、`eth2=backend 10.60.1.4` |
+| Public IP | 仅绑定 frontend NIC；management/backend NIC 无 Public IP |
+| Windows 管理工作站 | `10.60.3.10`，与 Gateway management NIC 共用 `10.60.3.0/24` |
+| Azure Bastion | Basic SKU，Provisioning State 为 `Succeeded` |
+| RDP NSG | TCP/3389 只允许 `AzureBastionSubnet 10.60.4.0/26` |
+| Windows → Gaia | TCP/443 成功；`curl -k` 返回 `HTTP/1.1 200 OK`、`Server: CPWS`，HTML title 为 `Gaia` |
+| 交互入口 | Windows 公共桌面创建 `Check Point Gaia Portal` 快捷方式，目标为 `https://10.60.3.4` |
+| Terraform 收敛 | 部署完成后重新 plan 为 `No changes` |
+
+North Europe 当时对 Windows `Standard_D4s_v5` 和 `Standard_D4as_v5` 返回实时
+`SkuNotAvailable`；`Standard_D4ls_v6`（4 vCPU/8 GiB）成功分配，因此当前默认值采用
+已实测规格。该验证只证明 Bastion/Windows/私网管理 URL 路径可用，不表示
+SmartConsole 已安装、BYOL 已激活或 policy 已配置。
+
+## 2026-08 历史双网卡现场环境
 
 | 角色 | 区域 | VM SKU | 现场条件 |
 | --- | --- | --- | --- |
@@ -29,6 +50,7 @@ plan/sku  = mgmt-byol
 ## Custom image 与 VHD POC
 
 2026-08-28 使用 Marketplace 版本 `8200.900779.2061` 完成以下验证：
+本节是历史双网卡镜像 POC，`10.70.*` 地址不属于当前 `10.60.*` 三网卡部署。
 
 | 项目 | 结果 |
 | --- | --- |
@@ -117,9 +139,9 @@ T13 为预期 `SKIP`，因为 example 默认 `enable_inbound_demo=false`，不�
 本次故意强制 `CHECKPOINT_TRANSPORT=run-command` 的首次尝试跨越 Gaia FTW reboot
 时，Azure Run Command handler 没有成功安装并留下 stale `Updating`。Guest 中没有
 policy 进程，Management API 本身正常。随后使用受 `management_cidrs` 限制的 SSH
-执行同一幂等 policy 脚本，全部功能测试通过。仓库默认的
-`CHECKPOINT_TRANSPORT=auto` 会优先使用 SSH，因此不要为 custom image 强制设为
-`run-command`，除非已在目标 image/区域验证该 extension 路径。
+执行同一幂等 policy 脚本，全部功能测试通过。当前仓库默认
+`CHECKPOINT_TRANSPORT=ssh` 并要求从私有管理网运行；`run-command` 只保留为显式
+break-glass，且必须先在目标 image/区域验证 extension 路径。
 
 ## R81 无 Plan VHD 完整端到端验证
 
@@ -214,7 +236,8 @@ R81 T07 可通过 SmartConsole create/import CA、启用 Gateway、配置 HTTPS 
 `CHECKPOINT_TLS_CA_FILE=<exported public CA>` 接入该人工 bootstrap；未实际完成
 SmartConsole 操作前仍保持 `SKIP`，不使用 `dbedit` 或私有 API 冒充结果。
 
-测试完成后，4 台 R81 Demo VM 均已 deallocated；Direct Upload 的临时 managed
+该段记录的是 2026-08 历史双网卡环境。测试完成后，当时的 4 台 R81 Demo VM
+均已 deallocated；Direct Upload 的临时 managed
 image 和 upload disk 已删除。R81 Gallery version 及其两个已完成副本保留，便于后续
 重复部署。WORM policy 仍为 `Unlocked`，未执行不可逆锁定。
 
@@ -344,14 +367,15 @@ allowProtectedAppendWrites: true
 | TCP/8080 已有内置 Service | 复用 `HTTP_proxy` |
 | Access Layer 默认只启用 Firewall | 设置 `applications-and-url-filtering=true` |
 | Gateway 本机日志和 Azure metadata 被默认拒绝 | 增加来源仅为 Gateway object 的服务规则 |
-| Anti-Spoofing 要求两块接口 | Gateway object 同时定义 `eth0` External 和 `eth1` Internal |
+| 历史双网卡 Anti-Spoofing 要求 | 当时 Gateway object 定义 `eth0` External / `eth1` Internal；当前重建拓扑改为 `eth0` Management、`eth1` External、`eth2` Internal |
 | Policy 安装后 SSH 需要继续可用 | Azure NSG 和 Check Point policy 使用同一个 `management_cidrs` 列表 |
 
 ## 客户环境需要复查的项目
 
 - 在 Check Point User Center 激活正式 BYOL，并检查 Firewall、Application
   Control、URL Filtering 和 HTTPS Inspection Software Blade。
-- 把所有客户运维出口写入 `management_cidrs`，单 IP 使用 `/32`，不使用 `0.0.0.0/0`。
+- `management_subnet_prefix` 始终作为本地管理来源；只把能通过 VPN/私网路由到达该
+  subnet 的额外运维前缀写入 `management_cidrs`，不使用公网出口或 `0.0.0.0/0`。
 - 在每次部署前重新检查 EU 区域容量、vCPU quota 和 VM SKU。
 - 根据客户批准的端点执行 T13，再判断是否启用入站 DNAT。
 - 根据合规和成本要求确认保留期；确认后再执行不可逆 WORM lock。

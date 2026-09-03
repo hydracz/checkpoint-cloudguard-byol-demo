@@ -8,7 +8,6 @@ source "$ROOT/scripts/lib.sh"
 OUTPUTS_FILE=""
 OUTPUT_DIR=""
 EXPECTED_RELEASE=""
-CONFIGURE_POLICY=false
 CA_FILE="${CHECKPOINT_TLS_CA_FILE:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -29,10 +28,6 @@ while [[ $# -gt 0 ]]; do
       EXPECTED_RELEASE="$2"
       shift 2
       ;;
-    --configure-policy)
-      CONFIGURE_POLICY=true
-      shift
-      ;;
     --ca-file)
       [[ $# -ge 2 ]] || die "--ca-file requires a path."
       [[ -f "$2" ]] || die "Public CA file not found: $2"
@@ -40,7 +35,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      die "Usage: $0 [--outputs-file FILE] [--output-dir DIR] [--expected-release R81|R82|R8210] [--configure-policy] [--ca-file FILE]"
+      die "Usage: $0 [--outputs-file FILE] [--output-dir DIR] [--expected-release R81|R82|R8210] [--ca-file FILE]"
       ;;
   esac
 done
@@ -103,12 +98,11 @@ jq -n \
 jq -n \
   --arg actualRelease "$actual_release" \
   --arg expectedRelease "${EXPECTED_RELEASE:-$actual_release}" \
-  --argjson configurePolicy "$CONFIGURE_POLICY" \
   --argjson caFileProvided "$ca_file_provided" \
   '{
     actualRelease: $actualRelease,
     expectedRelease: $expectedRelease,
-    configurePolicy: $configurePolicy,
+    configurePolicy: false,
     caFileProvided: $caFileProvided
   }' >"$OUTPUT_DIR/stage2-metadata.json"
 
@@ -120,54 +114,20 @@ if [[ -n "$OUTPUTS_FILE" ]]; then
   outputs_args=(--outputs-file "$OUTPUTS_FILE")
 fi
 
-if $CONFIGURE_POLICY; then
-  printf '$ CHECKPOINT_SKIP_POLICY_CONFIGURATION=false bash -x %q' \
-    "$ROOT/scripts/configure-policy.sh" >>"$commands_log"
-  if ((${#outputs_args[@]} > 0)); then
-    printf ' %q' "${outputs_args[@]}" >>"$commands_log"
-  fi
-  printf '\n' >>"$commands_log"
-
-  echo "Stage 2: configuring policies on the existing $actual_release deployment."
-  set +e
-  CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \
-    bash -x "$ROOT/scripts/configure-policy.sh" "${outputs_args[@]}" \
-    >"$OUTPUT_DIR/configure-policy.log" 2>>"$commands_log"
-  validation_exit_code=$?
-  set -e
-  if ((validation_exit_code != 0)); then
-    echo "Policy configuration failed; generating a failure report." >&2
-  else
-    if [[ -f "$LOCAL_DIR/checkpoint-policy-output.txt" ]]; then
-      cp "$LOCAL_DIR/checkpoint-policy-output.txt" \
-        "$OUTPUT_DIR/firewall-configuration-output.txt"
-    elif [[ -f "$LOCAL_DIR/checkpoint-policy-run-command.json" ]]; then
-      cp "$LOCAL_DIR/checkpoint-policy-run-command.json" \
-        "$OUTPUT_DIR/firewall-configuration-output.json"
-    fi
-    if [[ -f "$LOCAL_DIR/checkpoint-policy-stderr.log" ]]; then
-      cp "$LOCAL_DIR/checkpoint-policy-stderr.log" \
-        "$OUTPUT_DIR/firewall-configuration-log.txt"
-    fi
-  fi
+printf '$ bash -x %q' "$ROOT/scripts/run-tests.sh" >>"$commands_log"
+if ((${#outputs_args[@]} > 0)); then
+  printf ' %q' "${outputs_args[@]}" >>"$commands_log"
 fi
+printf ' --output-dir %q\n' "$OUTPUT_DIR" >>"$commands_log"
 
-if ((validation_exit_code == 0)); then
-  printf '$ bash -x %q' "$ROOT/scripts/run-tests.sh" >>"$commands_log"
-  if ((${#outputs_args[@]} > 0)); then
-    printf ' %q' "${outputs_args[@]}" >>"$commands_log"
-  fi
-  printf ' --output-dir %q\n' "$OUTPUT_DIR" >>"$commands_log"
-
-  echo "Stage 2: running automated validation against the existing deployment."
-  set +e
-  bash -x "$ROOT/scripts/run-tests.sh" \
-    "${outputs_args[@]}" \
-    --output-dir "$OUTPUT_DIR" \
-    >"$OUTPUT_DIR/run-tests.log" 2>>"$commands_log"
-  validation_exit_code=$?
-  set -e
-fi
+echo "Running independent validation against the existing $actual_release deployment."
+set +e
+bash -x "$ROOT/scripts/run-tests.sh" \
+  "${outputs_args[@]}" \
+  --output-dir "$OUTPUT_DIR" \
+  >"$OUTPUT_DIR/run-tests.log" 2>>"$commands_log"
+validation_exit_code=$?
+set -e
 
 python3 "$ROOT/scripts/render-test-report.py" \
   --evidence-dir "$OUTPUT_DIR" \

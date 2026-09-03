@@ -1,8 +1,9 @@
 # 已部署环境的独立自动测试步骤
 
-本文用于 **Terraform/Azure 基础设施已经部署成功以后** 的第二阶段工作。测试阶段不重新创建
-基础设施；它读取第一阶段导出的 Terraform outputs，按需配置 Check Point Firewall，
+本文用于 **Terraform/Azure 基础设施已经部署成功、且管理员已在 SmartConsole/Gaia
+完成配置以后** 的独立验证。测试阶段不重新创建基础设施；它读取 Terraform outputs，
 执行 T01-T17，提取 Firewall rules 和 Accept/Drop 日志，并生成客户可读 HTML 报告。
+保留的自动配置模式是显式选项，不属于 `deploy.sh`。
 
 ## 1. 第一阶段交接物
 
@@ -12,8 +13,8 @@
 .local/latest-deployment-outputs.json
 ```
 
-该文件是 `terraform output -json` 的结果，不包含本项目的明文密码或私钥，但包含客户订阅、
-Resource Group、VM 名称、IP 和日志资源标识，必须按客户敏感资料保护。
+该文件是 `terraform output -json` 的结果；启用 Windows 管理工作站时包含 sensitive
+管理员密码，同时包含客户订阅、Resource Group、VM 名称、IP 和日志资源标识，必须按凭据保护。
 
 如果部署成功但交接文件不存在，并且原 Terraform state 仍在当前目录，可重新导出：
 
@@ -32,8 +33,9 @@ chmod 600 .local/latest-deployment-outputs.json
 - Azure CLI 已登录，且当前身份可以读取目标订阅、VM、NIC、NSG、Log Analytics 和 Storage。
 - `jq`、Python 3、OpenSSL 和 Bash。
 - 本仓库与部署时的脚本版本兼容。
-- 若使用 Gaia SSH，持有部署时的私钥；默认路径是 `.local/checkpoint-demo-ssh`。
-- 四台 VM 均为 `PowerState/running`；Ubuntu workload/collector 的 Azure VM Agent 为 `Ready`。
+- 若使用 Gaia SSH，测试机必须位于 management subnet/可信私网并持有部署时的私钥；
+  默认路径是 `.local/checkpoint-demo-ssh`。
+- 五台 VM 均为 `PowerState/running`；Ubuntu workload/collector 和 Windows 的 Azure VM Agent 为 `Ready`。
 
 先读取交接信息：
 
@@ -51,11 +53,12 @@ az account show \
   --output table
 ```
 
-检查四台 VM：
+检查五台 VM：
 
 ```bash
 for key in \
   checkpoint_vm_name \
+  windows_client_vm_name \
   eu_workload_vm_name \
   remote_workload_vm_name \
   collector_vm_name; do
@@ -86,10 +89,10 @@ az vm start \
 
 ## 3. 选择第二阶段模式
 
-### 模式 A：Firewall policy 已配置，只执行验证
+### 模式 A：手工 policy 已配置，只执行验证
 
-适用于第一阶段已经完成 Check Point objects/rules、Policy Install 和 Log Exporter 配置的环境。
-不传 `--configure-policy`，脚本不会修改 Firewall policy：
+适用于已通过 SmartConsole/Gaia 完成 Check Point objects/rules、Policy Install 和
+Log Exporter 配置的环境。验证脚本不会修改 Firewall policy：
 
 ```bash
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -101,20 +104,23 @@ OUT="evidence/${STAMP}-${RELEASE}-post-deploy"
   --output-dir "$OUT"
 ```
 
-### 模式 B：第一阶段只完成基础部署，配置 Firewall 后再验证
+### 模式 B：显式使用保留的 R81/R82 自动化后再验证
 
-适用于部署时使用 `--skip-policy`，或 Gateway 完成 BYOL 激活后才允许安装 policy 的环境。
-`--configure-policy` 会在测试开始前创建/更新 objects、Access Control rules、NAT、路由和
-Log Exporter，并 Publish/Install policy：
+只适用于已确认允许脚本修改 Gateway、且执行机能访问
+`checkpoint_management_private_ip` 的环境。先独立运行保留的自动化，再运行只读验证：
 
 ```bash
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="evidence/${STAMP}-${RELEASE}-post-deploy"
 
+CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \
+  CHECKPOINT_TRANSPORT=ssh \
+  ./scripts/configure-policy.sh \
+  --outputs-file "$OUTPUTS"
+
 ./scripts/validate-existing.sh \
   --outputs-file "$OUTPUTS" \
   --expected-release "$RELEASE" \
-  --configure-policy \
   --output-dir "$OUT"
 ```
 
@@ -179,10 +185,15 @@ T07 会明确记录 `SKIP`，HTML 报告同时给出完整半自动步骤。若�
     STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
     OUT="evidence/${STAMP}-R81-tls-validation"
 
+    CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \
+      CHECKPOINT_TRANSPORT=ssh \
+      CHECKPOINT_TLS_CA_FILE="<SMARTCONSOLE_EXPORTED_PUBLIC_CA>" \
+      ./scripts/configure-policy.sh \
+      --outputs-file .local/r81-tls-validation-outputs.json
+
     ./scripts/validate-existing.sh \
       --outputs-file .local/r81-tls-validation-outputs.json \
       --expected-release R81 \
-      --configure-policy \
       --ca-file "<SMARTCONSOLE_EXPORTED_PUBLIC_CA>" \
       --output-dir "$OUT"
     ```

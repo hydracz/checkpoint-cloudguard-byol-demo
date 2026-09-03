@@ -17,14 +17,16 @@ VM、NIC、IP、UDR、Gaia 静态路由、Peering 和 NSG 的字段表：
 
 | 页面 | 主要读者 | 内容 | 连线原则 |
 | --- | --- | --- | --- |
-| `01-现场环境资源与IP` | Azure / 网络实施 | 现场 Region、VNet、subnet、VM、NIC、IP、UDR、Peering、日志资源 | 只画 NIC attach 和独立 Peering Bus，不画业务流量 |
-| `02-路由与流量` | 网络 / 防火墙实施 | 出站、跨区域东西向、可选 DNAT、日志转发 | 每类流量独立横向泳道，线不跨设备 |
-| `03-安全策略与TLS` | 安全策略实施 | 对象、Access Rule 顺序、HTTPS Inspection、CA trust | 策略与证书各自纵向顺序 |
-| `04-部署与审计` | 平台 / 运维 / 合规 | 两阶段 Terraform、Check Point 配置、日志链路、WORM 状态 | 部署和日志各一条水平链路 |
+| `01-现场环境资源与IP` | Azure / 网络实施 | 现场 Region、VNet、subnet、VM、NIC、IP、UDR、Peering、日志资源 | 跨 subnet 归属只用分组和文字；仅保留 subnet 内短线与独立 Peering Bus |
+| `02-路由与流量` | 网络 / 防火墙实施 | 出站、跨区域东西向、可选 DNAT、日志转发、私有管理路径 | 每类流量独立横向泳道，线不跨设备 |
+| `03-安全策略与TLS` | 安全策略实施 | SmartConsole 手工对象/规则/TLS 规划，以及保留的可选自动化 | 策略与证书各自纵向顺序 |
+| `04-部署与审计` | 平台 / 运维 / 合规 | 纯基础设施部署、手工配置交接、独立测试、可选日志导出/WORM | 主流程保持单向；独立测试不接入部署主线 |
 
 ## 第一页：现场资源与 IP
 
 第一页用于确认“部署了什么、放在哪里、每块网卡是什么地址”，不承担数据流说明。
+Hub 位于画布中央，Primary Spoke 在左、Remote Spoke 在右；底部只画两条独立的
+`Spoke ↔ Hub` Peering，绝不画 `Spoke ↔ Spoke` 连接。
 
 ### Check Point VM
 
@@ -32,9 +34,10 @@ VM、NIC、IP、UDR、Gaia 静态路由、Peering 和 NSG 的字段表：
 | --- | --- |
 | VM | `cpbyol-gateway` |
 | Marketplace | Check Point R82 standalone / `mgmt-byol` |
-| SKU | `Standard_F16s`（16 vCPU/32 GiB；2026-08-27 现场容量备用规格） |
-| `eth0` NIC | `cpbyol-gateway-eth0` / `10.60.0.4` / frontend subnet / Public IP |
-| `eth1` NIC | `cpbyol-gateway-eth1` / `10.60.1.4` / backend subnet / IP forwarding |
+| SKU | 默认 `Standard_D8s_v5`（8 vCPU/32 GiB）；`Standard_F16s` 为容量备用规格 |
+| `eth0` NIC | `cpbyol-gateway-management` / `10.60.3.4` / management subnet / Azure primary / 无 Public IP |
+| `eth1` NIC | `cpbyol-gateway-frontend` / `10.60.0.4` / frontend subnet / Public IP / IP forwarding |
+| `eth2` NIC | `cpbyol-gateway-backend` / `10.60.1.4` / backend subnet / NVA next hop / IP forwarding |
 
 ### Workload 和 collector
 
@@ -43,6 +46,7 @@ VM、NIC、IP、UDR、Gaia 静态路由、Peering 和 NSG 的字段表：
 | `cpbyol-eu-workload` | `Standard_D4ls_v6`（4C/8GiB）/ `cpbyol-eu-workload-nic` / `10.61.0.4` | 无 |
 | `cpbyol-remote-workload` | `Standard_D4ls_v6`（4C/8GiB）/ `cpbyol-remote-workload-nic` / `10.62.0.4` | 无 |
 | `cpbyol-log-collector` | `Standard_D4ls_v6`（4C/8GiB）/ `cpbyol-collector-nic` / `10.60.2.4` | 仅用于 Agent bootstrap 出站，不开放公网管理 |
+| `cpbyol-windows-client` | `Standard_D4ls_v6`（4C/8GiB）/ `cpbyol-windows-client-nic` / `10.60.3.10` | 无；通过 `cpbyol-bastion` RDP |
 
 页面底部的 Peering Bus 表示：
 
@@ -58,7 +62,7 @@ VM、NIC、IP、UDR、Gaia 静态路由、Peering 和 NSG 的字段表：
 ### A. 南北向出站
 
 ```text
-VM -> 0/0 UDR -> Check Point eth1 -> L4/L7/Geo/TLS -> eth0 -> Public IP NAT -> Internet
+VM -> 0/0 UDR -> Check Point eth2 -> L4/L7/Geo/TLS -> eth1 -> Public IP NAT -> Internet
 ```
 
 ### B. 跨区域东西向
@@ -66,7 +70,8 @@ VM -> 0/0 UDR -> Check Point eth1 -> L4/L7/Geo/TLS -> eth0 -> Public IP NAT -> I
 ```text
 EU VM
   -> EU route table (10.62/16 -> 10.60.1.4)
-  -> Check Point eth1
+  -> EU Spoke-to-Hub peering
+  -> Hub Check Point eth2
   -> stateful policy
   -> Gaia route (10.62/16 -> 10.60.1.1)
   -> Azure Global VNet Peering
@@ -80,9 +85,9 @@ EU VM
 ```text
 Approved source CIDR
   -> Public IP:18080
-  -> Azure NAT to eth0
+  -> Azure NAT to eth1
   -> Check Point Access + DNAT
-  -> Gaia route / eth1
+  -> Gaia route / eth2
   -> EU workload NSG
   -> 10.61.0.4:8080
 ```
@@ -97,7 +102,20 @@ Check Point Log Server
   -> AMA/DCR/Log Analytics/Storage
 ```
 
-## 第三页：安全策略与 TLS
+### E. 私有管理路径
+
+```text
+Operator -> Azure Bastion -> Windows 10.60.3.10
+  -> SmartConsole / Gaia Portal
+  -> Check Point eth0 10.60.3.4
+```
+
+Gateway Public IP 只绑定 `eth1`，frontend/backend NSG 不开放管理端口。
+
+## 第三页：手工安全策略与保留自动化
+
+默认在 Windows 管理工作站上用 SmartConsole 手工完成本页内容。R81/R82
+`configure-policy.sh` 仍保留，但只能作为部署后的私网显式操作，不由 `deploy.sh` 调用。
 
 ### 策略对象
 
@@ -133,15 +151,15 @@ Check Point Log Server
 
 ## 第四页：部署与审计
 
-### 两阶段部署
+### 默认与可选步骤
 
 1. 预检工具、Marketplace 镜像、VM SKU 和 Terraform 配置。
 2. 接受 Marketplace Terms。
-3. Terraform Phase 1：网络、VM、Azure Monitor Agent/DCR、Log Analytics、Storage 和 `Unlocked` WORM。
-4. 写入 Gaia 静态路由、Management API policy、TLS CA、policy 和 Log Exporter。
-5. 写入 bootstrap syslog，等待 `Syslog` 表。
-6. Terraform Phase 2：Continuous Data Export。
-7. 可选执行不可逆 WORM lock。
+3. Terraform 部署 VNet、三网卡 Gateway、Windows、Bastion、AMA/DCR、Log Analytics、Storage 和 `Unlocked` WORM。
+4. 输出私网管理地址和凭据；默认流程到此结束，不执行 Check Point policy 配置。
+5. 管理员通过 Bastion/Windows 手工配置 Gaia 和 SmartConsole。
+6. `scripts/test.sh` 独立执行本地 Terraform/mock tests；手工策略完成后再按需运行 `validate-existing.sh`。
+7. 可选运行 `enable-audit-export.sh` 和不可逆 WORM lock。
 
 ### 日志与 WORM
 
@@ -165,7 +183,7 @@ Azure 应返回 `Locked`；该状态不能恢复为 `Unlocked`。
 | 蓝色 | Azure route、受控网络引流 |
 | 绿色 | 内部返回路径、Peering、允许规则 |
 | 红色 | Check Point enforcement、Drop、不可逆动作 |
-| 橙色 | Public IP、管理入口、条件化 DNAT、警告 |
+| 橙色 | Public IP、外部流量入口、条件化 DNAT、警告 |
 | 紫色 | TLS、日志、Log Analytics、Storage/WORM |
 
 ## 维护规则

@@ -77,7 +77,7 @@ CASE_INFO = {
     ),
     "T17": (
         "管理 NSG Rules",
-        "SSH、Gaia Portal 和 SmartConsole rules 应为 Allow，来源应与 management_cidrs 一致。",
+        "eth0 管理规则应匹配可信来源并拒绝其他 VNet；数据平面不得从公网开放管理端口。",
     ),
 }
 
@@ -204,6 +204,9 @@ def build_configuration(outputs, metadata, stage2):
         "Resource Group": output_value(outputs, "resource_group_name"),
         "Check Point 版本": output_value(outputs, "checkpoint_os_version"),
         "Gateway VM": output_value(outputs, "checkpoint_vm_name"),
+        "Gateway Management IP": output_value(
+            outputs, "checkpoint_management_private_ip"
+        ),
         "Gateway Public IP": output_value(outputs, "checkpoint_public_ip"),
         "Gateway Backend IP": output_value(
             outputs, "checkpoint_backend_private_ip"
@@ -482,11 +485,13 @@ def case_command(case_id, outputs, rulebase_name):
         outputs, "resource_group_name", "<RESOURCE_GROUP>"
     )
     gateway_vm = output_value(outputs, "checkpoint_vm_name", "<GATEWAY>")
-    gateway_ip = output_value(
+    gateway_public_ip = output_value(
         outputs, "checkpoint_public_ip", "<GATEWAY_PUBLIC_IP>"
     )
     gateway_nsg = str(
-        output_value(outputs, "checkpoint_nsg_id", "<GATEWAY_NSG>")
+        output_value(
+            outputs, "checkpoint_management_nsg_id", "<MANAGEMENT_NSG>"
+        )
     ).rsplit("/", 1)[-1]
     eu_vm = output_value(outputs, "eu_workload_vm_name", "<PRIMARY_VM>")
     remote_vm = output_value(
@@ -623,7 +628,7 @@ def case_command(case_id, outputs, rulebase_name):
         ),
         "T13": (
             "测试执行终端（必须位于批准来源）",
-            f"curl -fsS --connect-timeout 10 --max-time 30 http://{gateway_ip}:18080/",
+            f"curl -fsS --connect-timeout 10 --max-time 30 http://{gateway_public_ip}:18080/",
         ),
         "T14": (
             azure_target,
@@ -921,11 +926,16 @@ r81_tls_manually_configured = true
 terraform -chdir=infra apply -input=false -auto-approve "$(pwd)/.local/plan.tfplan"
 terraform -chdir=infra output -json > .local/r81-tls-validation-outputs.json
 
-# 3. 安装 public CA trust、保留 SmartConsole 配置并执行 T01-T17/T07
+# 3. 从私有 management network 安装 trust，再独立执行 T01-T17/T07
+CHECKPOINT_SKIP_POLICY_CONFIGURATION=false \\
+  CHECKPOINT_TRANSPORT=ssh \\
+  CHECKPOINT_TLS_CA_FILE=<SMARTCONSOLE_EXPORTED_PUBLIC_CA> \\
+  ./scripts/configure-policy.sh \\
+  --outputs-file .local/r81-tls-validation-outputs.json
+
 ./scripts/validate-existing.sh \\
   --outputs-file .local/r81-tls-validation-outputs.json \\
   --expected-release R81 \\
-  --configure-policy \\
   --ca-file <SMARTCONSOLE_EXPORTED_PUBLIC_CA>"""
     return f"""
   <h2>R81 HTTPS Inspection（T07）前置条件与半自动完成步骤</h2>
@@ -937,7 +947,7 @@ terraform -chdir=infra output -json > .local/r81-tls-validation-outputs.json
     <ul>
       <li>R81 standalone Gateway 与 Management API 正常，受保护 workload 的默认路由经过该 Gateway。</li>
       <li>客户 BYOL 已激活 Firewall、Application Control、URL Filtering 和 HTTPS Inspection blades。</li>
-      <li>使用与 R81 匹配的 SmartConsole，并从 <code>management_cidrs</code> 允许的来源连接。</li>
+      <li>使用与 R81 匹配的 SmartConsole，并从 management subnet 或 <code>management_cidrs</code> 允许的私网来源连接。</li>
       <li>已确认客户允许进行 TLS 解密，并明确 bypass 范围、证书固定应用和隐私边界。</li>
     </ul>
 
