@@ -40,6 +40,10 @@ output_value() {
 SUBSCRIPTION="$(output_value subscription_id)"
 MANAGEMENT_CIDRS_JSON="$(printf '%s' "$outputs" | jq -e -c '.management_cidrs.value')"
 MANAGEMENT_CIDRS_B64="$(printf '%s' "$MANAGEMENT_CIDRS_JSON" | openssl base64 -A)"
+MANAGEMENT_IS_UNRESTRICTED="$(
+  printf '%s' "$MANAGEMENT_CIDRS_JSON" |
+    jq -r 'length == 1 and .[0] == "0.0.0.0/0"'
+)"
 COMPANY_DOMAIN="$(output_value company_domain)"
 CHECKPOINT_RELEASE="$(output_value checkpoint_os_version)"
 RG="$(output_value resource_group_name)"
@@ -140,7 +144,8 @@ ssh_options=(
   -o StrictHostKeyChecking=accept-new
   -o "UserKnownHostsFile=$LOCAL_DIR/known_hosts"
 )
-if [[ "$SKIP_POLICY_CONFIGURATION" == "true" ]]; then
+if [[ "$SKIP_POLICY_CONFIGURATION" == "true" &&
+  "$MANAGEMENT_IS_UNRESTRICTED" == "true" ]]; then
   readiness_description="Gaia CLI and Log Exporter"
   readiness_command='command -v clish >/dev/null &&
    command -v cp_conf >/dev/null &&
@@ -149,7 +154,9 @@ if [[ "$SKIP_POLICY_CONFIGURATION" == "true" ]]; then
    timeout 30 clish -c "show version all" >/dev/null 2>&1'
 else
   readiness_description="Management API and Log Exporter"
-  readiness_command='command -v mgmt_cli >/dev/null &&
+  readiness_command='command -v clish >/dev/null &&
+   command -v cp_conf >/dev/null &&
+   command -v mgmt_cli >/dev/null &&
    command -v cp_log_export >/dev/null &&
    timeout 30 mgmt_cli -r true show packages limit 1 --format json >/dev/null 2>&1'
 fi

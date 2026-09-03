@@ -112,7 +112,7 @@ collector_vm_size = "Standard_D4ls_v6"
 
 # R81 GA/API 1.7 cannot bootstrap HTTPS Inspection headlessly.
 enable_tls_inspection = false
-skip_policy_configuration = false
+skip_policy_configuration = true
 
 # 完整验证 T13 时使用当前严格限源 /32；不测试入站 DNAT 时保持 false/空字符串。
 enable_inbound_demo      = true
@@ -151,20 +151,21 @@ git check-ignore -v .local/checkpoint-demo-ssh .local/checkpoint-demo-ssh.pub
 
 ```bash
 unset CHECKPOINT_RECONCILE_SSH_RULE
-./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
+./scripts/deploy.sh --var-file configs/r81-e2e.tfvars --skip-policy
 ```
 
 仅在已知会自动删除 TCP/22 rule 的测试订阅中启用恢复开关：
 
 ```bash
 export CHECKPOINT_RECONCILE_SSH_RULE=true
-./scripts/deploy.sh --var-file configs/r81-e2e.tfvars
+./scripts/deploy.sh --var-file configs/r81-e2e.tfvars --skip-policy
 ```
 
 该开关只按 Terraform output 中的严格限源 CIDR 临时恢复一条缺失的 TCP/22 rule，不会
-创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rule。R81 first boot 中 SSH 可能
-先于 Management API 和 Log Exporter 可用，部署脚本等待 `mgmt_cli` 登录和
-`cp_log_export` 均就绪后才配置策略。
+创建 `0.0.0.0/0`；操作结束后只删除它临时创建的 rule。第一阶段不创建 Access Policy，
+但受限 `management_cidrs` 仍需要同步 R81 GUI Clients，因此部署脚本会等待只读
+`mgmt_cli` 登录和 `cp_log_export` 均就绪后再执行 Gaia baseline。策略、对象和 Policy
+Install 留到第 5.2 节的 `--configure-policy` 第二阶段。
 
 ### 3.5 查看输出并人工登录
 
@@ -597,6 +598,22 @@ Pre-Upgrade Verifier、磁盘空间检查、关闭 SmartConsole sessions，并�
 TF="${TERRAFORM:-terraform}"
 RG="$("$TF" -chdir=infra output -raw resource_group_name)"
 SUB="$("$TF" -chdir=infra output -raw subscription_id)"
+COLLECTOR="$("$TF" -chdir=infra output -raw collector_vm_name)"
+WORKSPACE_ID="$("$TF" -chdir=infra output -raw log_analytics_workspace_id)"
+WORKSPACE="${WORKSPACE_ID##*/}"
+
+# Azure 不允许从 deallocated VM 删除 Terraform 管理的 Monitor Agent extension。
+if [[ "$(az vm get-instance-view \
+  --subscription "$SUB" \
+  --resource-group "$RG" \
+  --name "$COLLECTOR" \
+  --query "instanceView.statuses[?starts_with(code, 'PowerState/')].code | [0]" \
+  --output tsv)" != "PowerState/running" ]]; then
+  az vm start \
+    --subscription "$SUB" \
+    --resource-group "$RG" \
+    --name "$COLLECTOR"
+fi
 
 CONFIRM_DESTROY="$RG" \
   ./scripts/destroy.sh --var-file configs/r81-e2e.tfvars
@@ -606,7 +623,7 @@ az group exists --subscription "$SUB" --name "$RG"
 "$TF" -chdir=infra state list
 az monitor log-analytics workspace list-deleted-workspaces \
   --subscription "$SUB" \
-  --query "[?name=='cpr81-checkpoint-law' && resourceGroup=='$RG']"
+  --query "[?name=='$WORKSPACE' && resourceGroup=='$RG']"
 ```
 
 不要执行 `lock-worm.sh --yes`；WORM policy 保持 `Unlocked` 才能正常销毁。上述命令删除

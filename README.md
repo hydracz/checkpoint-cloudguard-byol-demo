@@ -317,8 +317,8 @@ export ARM_CLIENT_SECRET="<CLIENT_SECRET>"
 脚本先执行预检；默认 Marketplace 或有 Plan custom image 会接受 `mgmt-byol`
 条款，无 Plan custom image 不发出 terms/Plan 请求。之后脚本应用基础设施
 Terraform plan。默认 `skip_policy_configuration=true` 时，脚本只配置 Gaia 静态路由、
-GUI Clients 和 Log Exporter，不执行任何 `mgmt_cli` 命令。设置为 `false` 后才恢复原有
-策略、对象、Policy Install 和 Outbound CA 自动化。
+GUI Clients 和 Log Exporter，不使用 `mgmt_cli` 修改对象或安装策略。设置为 `false`
+后才恢复原有策略、对象、Policy Install 和 Outbound CA 自动化。
 
 日志导出分为两个 Terraform 阶段。脚本先向日志收集 VM 写入一条 bootstrap
 syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Export。
@@ -329,8 +329,10 @@ syslog，等待 Log Analytics 创建 `Syslog` 表，再创建 Continuous Data Ex
 测试的无密钥交接文件；其中包含订阅、资源名和公网地址等基础设施标识，仍应按客户资料保护。
 
 Gateway 配置默认 `CHECKPOINT_TRANSPORT=auto`：如果私钥可用，会通过 Gaia SSH 等待
-所需命令最多 30 分钟；默认模式只等待 Gaia CLI 和 Log Exporter，启用策略自动化后才
-探测 Management API。超时后回退到 Azure VM Run Command。
+所需命令最多 30 分钟。跳过策略且管理来源为 `0.0.0.0/0` 时只等待 Gaia CLI 和
+Log Exporter；配置受限 `management_cidrs` 时，即使跳过策略，也会先等待只读
+Management API 就绪，因为同步 GUI Clients 的 `cp_conf client createlist` 依赖
+standalone Management Server。超时后回退到 Azure VM Run Command。
 可用 `CHECKPOINT_SSH_WAIT_SECONDS` 调整等待时间，也可显式设置
 `CHECKPOINT_TRANSPORT=ssh` 或 `run-command`。
 若测试订阅自动删除 Terraform 创建的 SSH NSG rules，可在确认符合 Azure Policy 后
@@ -506,6 +508,16 @@ rulebase 配置、public CA 导出、tfvars 更新和 `--ca-file` 重跑步骤�
 此操作不可逆，锁定后保留期不能缩短，Terraform destroy 在保留期内可能无法删除 Storage。
 
 ### 6. 销毁
+
+如果日志收集 VM 已停机，先启动并等待其 VM Agent Ready；Azure 不允许在 deallocated VM
+上删除 Terraform 管理的 Azure Monitor Agent extension：
+
+```bash
+az vm start \
+  --subscription "$(terraform -chdir=infra output -raw subscription_id)" \
+  --resource-group "$(terraform -chdir=infra output -raw resource_group_name)" \
+  --name "$(terraform -chdir=infra output -raw collector_vm_name)"
+```
 
 ```bash
 CONFIRM_DESTROY="$(terraform -chdir=infra output -raw resource_group_name)" \
