@@ -1,5 +1,9 @@
 resource "random_password" "windows_client" {
-  count = var.enable_management_workstation ? 1 : 0
+  count = (
+    var.enable_management_workstation &&
+    var.windows_client_admin_password == "" &&
+    var.checkpoint_admin_password == ""
+  ) ? 1 : 0
 
   length           = 24
   min_lower        = 4
@@ -107,7 +111,8 @@ resource "azurerm_windows_virtual_machine" "management" {
 
   lifecycle {
     # Subscription policy can attach a system identity after VM creation.
-    ignore_changes = [identity]
+    # Password rotation is performed in place with Azure VMAccess, not by replacing the VM.
+    ignore_changes = [admin_password, identity]
   }
 
   depends_on = [azurerm_network_interface_security_group_association.windows_client]

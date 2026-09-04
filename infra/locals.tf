@@ -42,6 +42,8 @@ locals {
   windows_client_admin_password = (
     var.windows_client_admin_password != "" ?
     var.windows_client_admin_password :
+    var.checkpoint_admin_password != "" ?
+    var.checkpoint_admin_password :
     try(random_password.windows_client[0].result, null)
   )
   management_service_ports = [

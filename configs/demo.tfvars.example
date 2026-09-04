@@ -35,8 +35,8 @@ workload_vm_size   = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 collector_vm_size  = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 
 # Private Windows Server client and Basic Azure Bastion for future SmartConsole.
-# Leave the password unset to generate it in Terraform state, then retrieve it
-# with: terraform -chdir=infra output -raw windows_client_admin_password
+# The username is configurable and defaults to azureadmin. Unless an explicit
+# windows_client_admin_password is set, Windows reuses checkpoint_admin_password.
 enable_management_workstation = true
 windows_client_vm_size        = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 management_subnet_prefix      = "10.60.3.0/24"

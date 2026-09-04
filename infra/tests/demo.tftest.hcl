@@ -154,6 +154,32 @@ run "multiple_management_cidrs" {
   }
 }
 
+run "shared_windows_admin_password" {
+  command = plan
+
+  variables {
+    subscription_id                = "00000000-0000-0000-0000-000000000000"
+    tenant_id                      = "00000000-0000-0000-0000-000000000000"
+    client_id                      = "00000000-0000-0000-0000-000000000000"
+    client_secret                  = "validation-only"
+    checkpoint_admin_password      = "Validation-Shared-123!"
+    admin_ssh_public_key           = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINrbzTpCfh3HdCuNNixUv4ZIwRdvtxGlkzkErWrpPqbQ terraform-validation"
+    sic_key                        = "validation-only-sic-key"
+    checkpoint_os_version          = "R82"
+    checkpoint_image_id            = ""
+    checkpoint_image_requires_plan = true
+    enable_log_data_export         = false
+  }
+
+  assert {
+    condition = nonsensitive(
+      length(random_password.windows_client) == 0 &&
+      local.windows_client_admin_password == var.checkpoint_admin_password
+    )
+    error_message = "The Windows workstation must reuse checkpoint_admin_password by default without creating another password."
+  }
+}
+
 run "management_workstation_disabled" {
   command = plan
 

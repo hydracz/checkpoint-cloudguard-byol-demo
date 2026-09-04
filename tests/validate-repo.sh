@@ -180,14 +180,9 @@ grep -q 'permanently_delete_on_destroy.*= true' "$ROOT/infra/versions.tf"
 grep -q 'terraform_state_has' "$ROOT/scripts/deploy.sh" "$ROOT/scripts/enable-audit-export.sh"
 grep -q '^\.local/' "$ROOT/.gitignore"
 
-if grep -RInE \
-  --exclude-dir=.terraform \
-  --exclude-dir=.local \
-  --exclude='*.tfvars.example' \
-  --include='*.tf' \
-  --include='*.tfvars' \
+if git -C "$ROOT" grep -IlE \
   '(client_secret|admin_password|ARM_CLIENT_SECRET)[[:space:]]*=[[:space:]]*"[^"]+"' \
-  "$ROOT"; then
+  -- '*.tf' '*.tfvars' >/dev/null; then
   echo "Potential committed secret found." >&2
   exit 1
 fi

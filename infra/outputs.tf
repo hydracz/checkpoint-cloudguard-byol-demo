@@ -194,9 +194,9 @@ output "windows_client_admin_username" {
   description = "Local administrator username for the Windows management workstation."
 }
 
-output "windows_client_admin_password" {
-  value       = var.enable_management_workstation ? local.windows_client_admin_password : null
-  description = "Local administrator password for the Windows management workstation."
+output "generated_windows_client_admin_password" {
+  value       = try(random_password.windows_client[0].result, null)
+  description = "Fallback Windows password generated only when Terraform is used directly without either administrator password. Normal wrapper deployments return null."
   sensitive   = true
 }
 

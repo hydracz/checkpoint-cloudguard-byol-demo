@@ -248,7 +248,7 @@ variable "windows_client_vm_size" {
 }
 
 variable "windows_client_admin_username" {
-  description = "Local administrator account for the Windows management workstation."
+  description = "Configurable local administrator account for the Windows management workstation."
   type        = string
   default     = "azureadmin"
 
@@ -259,7 +259,7 @@ variable "windows_client_admin_username" {
 }
 
 variable "windows_client_admin_password" {
-  description = "Optional Windows administrator password. Leave empty to generate one; retrieve it with 'terraform -chdir=infra output -raw windows_client_admin_password'."
+  description = "Optional Windows administrator password override. Leave empty to reuse checkpoint_admin_password."
   type        = string
   default     = ""
   sensitive   = true
@@ -277,6 +277,19 @@ variable "windows_client_admin_password" {
       ])) >= 3
     )
     error_message = "windows_client_admin_password must be empty or 12-123 characters with at least three of lowercase, uppercase, number, and special characters, and no newline."
+  }
+
+  validation {
+    condition = (
+      !var.enable_management_workstation ||
+      var.windows_client_admin_password != "" ||
+      var.checkpoint_admin_password == "" ||
+      (
+        length(var.checkpoint_admin_password) >= 12 &&
+        length(var.checkpoint_admin_password) <= 123
+      )
+    )
+    error_message = "When the Windows workstation reuses checkpoint_admin_password, the shared password must be 12-123 characters."
   }
 }
 

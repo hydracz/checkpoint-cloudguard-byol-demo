@@ -186,7 +186,8 @@ management_subnet_prefix      = "10.60.3.0/24"
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
 | `enable_management_workstation` | 否 | bool | `true` | 在 Hub VNet 部署私有 Windows Server 和 Basic Azure Bastion；关闭可避免相关持续费用 |
 | `windows_client_vm_size` | 否 | string | `Standard_D4ls_v6` | 未来安装 Check Point SmartConsole 的 Windows VM 规格；实测 4 vCPU/8 GiB |
-| `windows_client_admin_password` | 否 | sensitive string | `""` | 空值时自动生成；也可显式提供独立强密码 |
+| `windows_client_admin_username` | 否 | string | `azureadmin` | Windows 本地管理员用户名，可按客户规范修改 |
+| `windows_client_admin_password` | 否 | sensitive string | `""` | 可选独立密码；空值时复用 `checkpoint_admin_password` |
 | `management_subnet_prefix` | 否 | string | `10.60.3.0/24` | Check Point `eth0` 与 Windows 管理工作站共享的私有管理子网 |
 | `bastion_subnet_prefix` | 否 | string | `10.60.4.0/26` | 必须用于专用 `AzureBastionSubnet` |
 | `blocked_countries` | 否 | list(string) | `["China"]` | Check Point Repository 中的英文国家名 |
@@ -345,8 +346,8 @@ Continuous Data Export 默认也从主部署中分离。需要时显式执行：
 `admin` 密码 hash 只写入权限为 `0600` 的 `.local/deployment-secrets.env`；明文密码
 保留在 gitignored tfvars，部署 SSH 私钥只写入 `.local/checkpoint-demo-ssh`。
 最终 Terraform outputs 同时保存到 `.local/latest-deployment-outputs.json`，作为第二阶段
-测试的交接文件并强制使用 `0600` 权限。启用管理工作站时，该文件包含 sensitive
-Windows 管理员密码，必须按凭据保护且不得发送或提交。
+测试的交接文件并强制使用 `0600` 权限。正常 wrapper 部署不会把共享的
+Check Point/Windows 明文密码重复写入 outputs 文件。
 
 默认 `TF_PARALLELISM=1`，用于兼容创建后短时间 GET 可能返回 404 的订阅/区域。确认客户订阅控制面稳定后可显式提高，例如 `TF_PARALLELISM=4`。
 
@@ -394,11 +395,29 @@ terraform -chdir=infra output
 ### 2. 通过 Bastion 登录 Windows 管理工作站
 
 Windows VM 没有 Public IP。Azure 门户打开 `bastion_host_name` 对应的 Bastion，
-选择 `windows_client_vm_name` 并使用以下输出登录：
+选择 `windows_client_vm_name`。默认登录用户名为 `azureadmin`，也可用 output 确认：
 
 ```bash
 terraform -chdir=infra output -raw windows_client_admin_username
-terraform -chdir=infra output -raw windows_client_admin_password
+```
+
+密码默认与 tfvars 中的 `checkpoint_admin_password` 相同；只有显式设置
+`windows_client_admin_password` 时才使用独立密码。
+新建 VM 在创建时使用该密码；已有 Windows VM 的密码轮换应使用 Azure VMAccess
+原地更新，Terraform 不会为了修改密码而重建工作站。
+
+```bash
+read -r -s -p "Windows password: " WINDOWS_PASSWORD
+echo
+az vm user update \
+  --subscription "$(terraform -chdir=infra output -raw subscription_id)" \
+  --resource-group "$(terraform -chdir=infra output -raw resource_group_name)" \
+  --name "$(terraform -chdir=infra output -raw windows_client_vm_name)" \
+  --username "$(terraform -chdir=infra output -raw windows_client_admin_username)" \
+  --password "$WINDOWS_PASSWORD" \
+  --only-show-errors \
+  --output none
+unset WINDOWS_PASSWORD
 ```
 
 工作站 NSG 只允许 `AzureBastionSubnet` 到 TCP/3389，并拒绝其他 VNet 主动入站。

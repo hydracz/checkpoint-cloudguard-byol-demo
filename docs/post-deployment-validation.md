@@ -13,8 +13,9 @@
 .local/latest-deployment-outputs.json
 ```
 
-该文件是 `terraform output -json` 的结果；启用 Windows 管理工作站时包含 sensitive
-管理员密码，同时包含客户订阅、Resource Group、VM 名称、IP 和日志资源标识，必须按凭据保护。
+该文件是 `terraform output -json` 的结果。正常 wrapper 部署不会把共享的
+Check Point/Windows 明文密码写入该文件，但仍包含客户订阅、Resource Group、
+VM 名称、IP 和日志资源标识，必须按客户敏感资料保护。
 
 如果部署成功但交接文件不存在，并且原 Terraform state 仍在当前目录，可重新导出：
 
