@@ -58,6 +58,7 @@ checkpoint-cloudguard-network-security/
   - 增加独立 management subnet、NIC 和 NSG
   - VM NIC 顺序改为 `eth0=management`、`eth1=frontend`、`eth2=backend`
   - Public IP 只绑定 frontend `eth1`；management `eth0` 只保留私网地址
+  - `management_subnet_id` 从 management NIC 导出，兼容旧版两子网 state 的 preflight
 
 除 `PATCHES.md` 明确记录的修改外，Check Point module 的资源逻辑、变量和
 cloud-init 保持上游实现。

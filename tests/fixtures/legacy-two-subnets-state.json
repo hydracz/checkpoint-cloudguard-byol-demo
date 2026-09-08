@@ -1,0 +1,40 @@
+{
+  "version": 4,
+  "terraform_version": "1.9.0",
+  "serial": 1,
+  "lineage": "00000000-0000-0000-0000-000000000000",
+  "outputs": {},
+  "resources": [
+    {
+      "module": "module.checkpoint.module.vnet",
+      "mode": "managed",
+      "type": "azurerm_subnet",
+      "name": "subnet",
+      "provider": "provider[\"registry.terraform.io/hashicorp/azurerm\"]",
+      "instances": [
+        {
+          "index_key": 0,
+          "schema_version": 0,
+          "attributes": {
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet/subnets/checkpoint-frontend",
+            "name": "checkpoint-frontend",
+            "address_prefixes": ["10.60.0.0/24"],
+            "resource_group_name": "rg-checkpoint-mock",
+            "virtual_network_name": "checkpoint-mock-hub-vnet"
+          }
+        },
+        {
+          "index_key": 1,
+          "schema_version": 0,
+          "attributes": {
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-checkpoint-mock/providers/Microsoft.Network/virtualNetworks/checkpoint-mock-hub-vnet/subnets/checkpoint-backend",
+            "name": "checkpoint-backend",
+            "address_prefixes": ["10.60.1.0/24"],
+            "resource_group_name": "rg-checkpoint-mock",
+            "virtual_network_name": "checkpoint-mock-hub-vnet"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -130,3 +130,17 @@ backend route-table 索引；VM 的 NIC attach 顺序则显式为
 `[management, frontend, backend]`。新增 management subnet、NIC、NSG 和私网 IP
 outputs，供同 subnet 的 Windows/SmartConsole 管理工作站使用。两个 NSG 名称均包含
 `single_gateway_name`，避免未来同 Resource Group 部署多个 Gateway 时发生名称冲突。
+
+## Patch 9：兼容旧版两子网 state 的 preflight
+
+涉及文件：`modules/single-gateway/outputs.tf`
+
+`preflight.sh` 和 `deploy.sh` 使用 `terraform console` 读取配置参数。Console 按当前
+state 求值，不会先规划第三个 subnet；旧版 state 只有 frontend/backend 时，
+`management_subnet_id = module.vnet.subnets[2]` 会触发 `Invalid index`，即使查询的
+只是镜像或区域参数。
+
+该 output 改为读取 management NIC 的 `ip_configuration[0].subnet_id`，与其他 NIC
+outputs 保持一致。升级前 management NIC 尚不存在时，该值保持 unknown；plan/apply
+后仍指向独立 management subnet。不返回占位 ID，不回退到 frontend/backend，也不
+需要删除或修改旧 state。三子网顺序和 management NIC 的 subnet 配置保持不变。

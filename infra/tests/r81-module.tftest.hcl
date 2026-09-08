@@ -26,6 +26,7 @@ run "r81_planless_full_module_plan" {
 
   assert {
     condition = (
+      length(module.checkpoint.subnet_ids) == 3 &&
       module.checkpoint.management_private_ip_address == "10.60.3.4" &&
       module.checkpoint.frontend_private_ip_address == "10.60.0.4" &&
       module.checkpoint.backend_private_ip_address == "10.60.1.4"

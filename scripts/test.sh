@@ -14,6 +14,7 @@ command -v "$TERRAFORM" >/dev/null 2>&1 || {
 "$TERRAFORM" -chdir="$INFRA" fmt -recursive -check
 "$TERRAFORM" -chdir="$INFRA" init -backend=false -input=false
 "$TERRAFORM" -chdir="$INFRA" validate
+"$ROOT/tests/preflight-console.sh"
 "$TERRAFORM" -chdir="$INFRA" test
 "$ROOT/tests/validate-repo.sh"
 

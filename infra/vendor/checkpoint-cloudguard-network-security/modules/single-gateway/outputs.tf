@@ -40,7 +40,7 @@ output "management_nsg_id" {
 
 output "management_subnet_id" {
   description = "The ID of the subnet shared by the gateway management interface and management clients."
-  value       = module.vnet.subnets[2]
+  value       = azurerm_network_interface.management.ip_configuration[0].subnet_id
 }
 
 output "management_nic_id" {

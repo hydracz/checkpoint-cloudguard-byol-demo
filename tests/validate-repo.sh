@@ -11,6 +11,7 @@ required=(
   infra/vendor/checkpoint-cloudguard-network-security/PATCHES.md
   infra/networking.tf infra/workloads.tf infra/management.tf infra/logging.tf infra/outputs.tf
   infra/tests/demo.tftest.hcl infra/tests/r81-module.tftest.hcl
+  tests/preflight-console.sh tests/fixtures/legacy-two-subnets-state.json
   configs/demo.tfvars.example
   cloud-init/workload.yaml cloud-init/collector.yaml
   scripts/lib.sh scripts/preflight.sh scripts/plan.sh scripts/deploy.sh scripts/test.sh
