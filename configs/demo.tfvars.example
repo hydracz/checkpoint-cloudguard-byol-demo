@@ -37,9 +37,14 @@ collector_vm_size  = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 # Private Windows Server client and Basic Azure Bastion for future SmartConsole.
 # The username is configurable and defaults to azureadmin. Unless an explicit
 # windows_client_admin_password is set, Windows reuses checkpoint_admin_password.
+# While enabled, only the primary Spoke excludes AzureBastionSubnet from its Hub
+# inspection routes. The complement follows configured CIDRs, not fixed IPs.
+# Disabling restores the primary Hub route; the remote Spoke is unchanged.
 enable_management_workstation = true
 windows_client_vm_size        = "Standard_D4ls_v6" # 4 vCPU / 8 GiB
 management_subnet_prefix      = "10.60.3.0/24"
+# Must be a canonical /26 strictly inside hub_address_space when enabled.
+# bastion_subnet_prefix = "10.60.4.0/26"
 
 # Customer-approved policy examples. Names must match Check Point's English
 # Updatable Object and Application Control catalogs.

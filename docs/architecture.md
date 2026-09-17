@@ -5,25 +5,39 @@
 - [checkpoint-cloudguard-byol-architecture.drawio](checkpoint-cloudguard-byol-architecture.drawio)
 - [drawio-architecture.md](drawio-architecture.md)
 - [network-ip-plan.md](network-ip-plan.md)
+- [架构总览、网络实施与 Step-by-step 使用指南](architecture-and-walkthrough.md)
 
 ## Azure 资源关系
 
 | 区域 | 网络 | 资源 |
 | --- | --- | --- |
-| Primary EU（默认 West Europe） | Hub `10.60.0.0/16` | Check Point management/frontend/backend 三网卡、日志收集 VM、私有 Windows 管理工作站、Azure Bastion、Log Analytics、GRS Storage |
+| Primary EU（默认 West Europe） | Hub `10.60.0.0/16` | Check Point management/frontend/backend 三网卡、日志收集 VM、私有 Windows 管理工作站、Azure Bastion |
+| Primary EU | 区域级 PaaS，不属于 Hub 子网 | Log Analytics、GRS Storage；当前未部署 Private Endpoint |
 | Primary EU | EU Spoke `10.61.0.0/16` | 无公网 IP 的工作负载 VM `10.61.0.4` |
 | Secondary EU（默认 North Europe） | Remote Spoke `10.62.0.0/16` | 无公网 IP 的工作负载 VM `10.62.0.4` |
 
-Hub 与两个 Spoke 分别创建双向 Azure Global VNet Peering，并启用
-`allow_forwarded_traffic`。两个 Spoke 不直接 Peering，避免 Azure 系统路由绕过防火墙。
+Hub 与同区域 EU Spoke 创建双向 VNet Peering，与跨区域 Remote Spoke 创建双向
+Azure Global VNet Peering；两对均启用 `allow_forwarded_traffic`。
+两个 Spoke 不直接 Peering，避免 Azure 系统路由绕过防火墙。
 
 ## 强制流量路径
 
-每个工作负载子网都有三条用户定义路由（UDR）：
+每个工作负载子网都关联独立 Route Table。默认开启 Bastion 时，主表 **12 条**、
+远端表 **3 条**用户定义路由（UDR）：
 
 1. `0.0.0.0/0` → `10.60.1.4`，控制互联网出站。
 2. 对端 spoke `/16` → `10.60.1.4`，控制跨区域东西向。
-3. Hub `/16` → `10.60.1.4`，控制工作负载访问 Hub 服务。
+3. 主表将 Hub `/16` 精确排除 Bastion `10.60.4.0/26` 后的 10 条补集前缀指向
+   `10.60.1.4`；远端表仍保留原 Hub `/16` → `10.60.1.4`。
+
+主 workload 到 Bastion 的回程使用系统 Hub Peering 路由，其 `/16` 比 NVA 默认 `/0`
+更具体；其余 Hub 地址仍命中补集 UDR。不要保留旧主表的 Hub `/16` UDR，
+否则相同长度时 UDR 会优先于系统 Peering。也不要把旧路由简单缩成 `/22`，
+这样会额外放过其他 Hub 地址。完整前缀和迁移步骤见 [网络规划](network-ip-plan.md)。
+
+Terraform 从可配置 Hub/Bastion CIDR 计算补集，而非硬编码默认 IP。
+`enable_management_workstation=false` 时不创建 Bastion，也不保留绕过例外，
+主表恢复原 Hub 路由、共 3 条。远端 Bastion 登录不在本次修正范围内。
 
 Check Point `eth0` 为 Management（`10.60.3.4`）、`eth1` 为 External/Frontend
 （`10.60.0.4` + Public IP）、`eth2` 为 Internal/Backend（`10.60.1.4`）。
@@ -39,6 +53,11 @@ Basic Azure Bastion 位于专用 `AzureBastionSubnet 10.60.4.0/26`，是工作�
 RDP 入口。工作站以后用于安装与 Gaia 版本匹配的 SmartConsole，并通过私网连接
 Check Point management IP。Gateway Public IP 只绑定 `eth1`，数据平面 NSG 不允许
 任何 Internet/Public CIDR 访问 SSH、Gaia Portal 或 SmartConsole 端口。
+
+Bastion 还可通过 Peering 直接 SSH 到主 workload `10.61.0.4`；这条管理路径不经过
+CloudGuard，不依赖 Windows 中转或 Gaia 业务静态路由。例外按目标 `/26` 对所有协议生效，
+不是端口白名单；NSG、guest firewall 和 SSH 认证仍需单独检查。Ubuntu 默认仅密钥认证，
+路由变更不会启用 VM Password，也不会给 workload 添加公网 IP。
 
 ## Access Control 与 HTTPS Inspection
 

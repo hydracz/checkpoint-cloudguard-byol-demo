@@ -1,0 +1,367 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1980" viewBox="0 0 2400 1980" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">Check Point CloudGuard BYOL：网络实施详图</title>
+  <desc id="diagram-description">当前默认 West Europe / North Europe 地址规划、五台 VM、CloudGuard 三网卡、五个 Hub 子网、两对 Hub-Spoke Peering、主表十二条和远端表三条 workload UDR、四条手工 Gaia 静态路由、管理 NSG 和审计链路。主表 Hub 补集精确排除 Bastion /26，使其回程使用系统 Peering；灰线仅为 NIC 归属，Log Analytics 和 Storage 在 Hub VNet 之外。</desc>
+  <defs>
+    <marker id="head-087f6d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#087f6d" />
+    </marker>
+    <marker id="head-1768ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1768ac" />
+    </marker>
+    <marker id="head-7950b5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7950b5" />
+    </marker>
+    <marker id="head-8293a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8293a7" />
+    </marker>
+  </defs>
+  <rect width="2400" height="1980" fill="#ffffff" />
+  <text id="title" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="38" font-weight="600" data-owner="">
+    <tspan x="40" y="68.0">Check Point CloudGuard BYOL | 网络实施详图</tspan>
+  </text>
+  <text id="subtitle" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="23" font-weight="400" data-owner="">
+    <tspan x="42" y="113.0">当前默认地址 / 区域 / SKU；灰线仅表示同一 Gateway VM 的 NIC 归属，业务逐包路径见底部。</tspan>
+  </text>
+  <text id="legend" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="400" data-owner="">
+    <tspan x="42" y="164.0">蓝色：Peering / UDR    绿色：管理    紫色：审计    橙色：CloudGuard / 公网数据面    虚线边框：区域 / VNet / 子网边界</tspan>
+  </text>
+  <rect id="primary-region" x="40" y="210" width="1695" height="1110" rx="12" fill="#f8fbff" stroke="#1768ac" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="primary-region-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="600" data-owner="primary-region">
+    <tspan x="58" y="253.0">Primary EU · West Europe</tspan>
+  </text>
+  <rect id="hub" x="500" y="275" width="1190" height="760" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="hub-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="27" font-weight="600" data-owner="hub">
+    <tspan x="518" y="317.0">Hub VNet · 10.60.0.0/16</tspan>
+  </text>
+  <rect id="eu-spoke" x="75" y="390" width="370" height="440" rx="12" fill="#edf5ff" stroke="#1768ac" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="eu-spoke-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="eu-spoke">
+    <tspan x="93" y="427.0">EU Spoke · 10.61.0.0/16</tspan>
+  </text>
+  <rect id="eu-subnet" x="95" y="460" width="330" height="200" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="eu-subnet-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="eu-subnet">
+    <tspan x="113" y="494.0">workload · 10.61.0.0/24</tspan>
+  </text>
+  <rect id="remote-region" x="1775" y="210" width="585" height="740" rx="12" fill="#f1faf6" stroke="#087f6d" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="remote-region-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="27" font-weight="600" data-owner="remote-region">
+    <tspan x="1793" y="252.0">Secondary EU · North Europe</tspan>
+  </text>
+  <rect id="remote-spoke" x="1810" y="300" width="505" height="480" rx="12" fill="#ffffff" stroke="#087f6d" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="remote-spoke-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="600" data-owner="remote-spoke">
+    <tspan x="1828" y="339.0">Remote Spoke · 10.62.0.0/16</tspan>
+  </text>
+  <rect id="remote-subnet" x="1835" y="370" width="455" height="205" rx="12" fill="#eaf8f3" stroke="#087f6d" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="remote-subnet-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="remote-subnet">
+    <tspan x="1853" y="407.0">workload · 10.62.0.0/24</tspan>
+  </text>
+  <rect id="management-subnet" x="535" y="335" width="700" height="190" rx="12" fill="#eaf8f3" stroke="#087f6d" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="management-subnet-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="23" font-weight="600" data-owner="management-subnet">
+    <tspan x="553" y="373.0">management · 10.60.3.0/24</tspan>
+  </text>
+  <rect id="bastion-subnet" x="1260" y="335" width="395" height="190" rx="12" fill="#eaf8f3" stroke="#087f6d" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="bastion-subnet-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="600" data-owner="bastion-subnet">
+    <tspan x="1278" y="368.0">AzureBastionSubnet · 10.60.4.0/26</tspan>
+  </text>
+  <rect id="frontend-subnet" x="535" y="735" width="345" height="235" rx="12" fill="#fff4e7" stroke="#ba5a0a" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="frontend-subnet-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="600" data-owner="frontend-subnet">
+    <tspan x="553" y="771.0">frontend · 10.60.0.0/24</tspan>
+  </text>
+  <rect id="backend-subnet" x="910" y="735" width="345" height="235" rx="12" fill="#fff4e7" stroke="#ba5a0a" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="backend-subnet-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="600" data-owner="backend-subnet">
+    <tspan x="928" y="771.0">backend · 10.60.1.0/24</tspan>
+  </text>
+  <rect id="collector-subnet" x="1285" y="735" width="370" height="235" rx="12" fill="#f4effb" stroke="#7950b5" stroke-width="2" stroke-dasharray="8 6" />
+  <text id="collector-subnet-title" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="600" data-owner="collector-subnet">
+    <tspan x="1303" y="771.0">collector · 10.60.2.0/24</tspan>
+  </text>
+  <rect id="eth0" x="555" y="400" width="255" height="110" rx="12" fill="#ffffff" stroke="#087f6d" stroke-width="2" />
+  <text id="eth0-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="600" data-owner="eth0">
+    <tspan x="573" y="434.0">eth0 · Management</tspan>
+  </text>
+  <text id="eth0-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="400" data-owner="eth0">
+    <tspan x="573" y="470.0">10.60.3.4 · 主 NIC</tspan>
+    <tspan x="573" y="492.1">无 PIP / forwarding Off</tspan>
+  </text>
+  <rect id="windows" x="840" y="395" width="370" height="115" rx="12" fill="#ffffff" stroke="#087f6d" stroke-width="2" />
+  <text id="windows-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="windows">
+    <tspan x="858" y="431.0">Windows 管理工作站</tspan>
+  </text>
+  <text id="windows-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="windows">
+    <tspan x="858" y="466.0">10.60.3.10 · 无 PIP</tspan>
+    <tspan x="858" y="489.4">RDP 仅允许 Bastion 来源</tspan>
+  </text>
+  <rect id="bastion" x="1290" y="400" width="335" height="110" rx="12" fill="#ffffff" stroke="#087f6d" stroke-width="2" />
+  <text id="bastion-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="600" data-owner="bastion">
+    <tspan x="1308" y="435.0">Bastion · Basic</tspan>
+  </text>
+  <text id="bastion-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="400" data-owner="bastion">
+    <tspan x="1308" y="470.0">专用 Standard Public IP</tspan>
+    <tspan x="1308" y="492.1">Portal HTTPS/443 入口</tspan>
+  </text>
+  <rect id="gateway" x="740" y="565" width="735" height="120" rx="12" fill="#fff4e7" stroke="#ba5a0a" stroke-width="2" />
+  <text id="gateway-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="600" data-owner="gateway">
+    <tspan x="758" y="604.0">cpbyol-gateway | R82 BYOL standalone</tspan>
+  </text>
+  <text id="gateway-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="gateway">
+    <tspan x="758" y="638.0">Standard_D8s_v5 · Gen1 · 8 vCPU / 32 GiB</tspan>
+    <tspan x="758" y="664.0">Management + Gateway + Log Server 同一 VM；非 HA</tspan>
+  </text>
+  <rect id="eth1" x="555" y="805" width="305" height="140" rx="12" fill="#ffffff" stroke="#ba5a0a" stroke-width="2" />
+  <text id="eth1-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="eth1">
+    <tspan x="573" y="841.0">eth1 · Frontend</tspan>
+  </text>
+  <text id="eth1-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="eth1">
+    <tspan x="573" y="876.0">10.60.0.4 + Static PIP</tspan>
+    <tspan x="573" y="899.4">IP forwarding = On</tspan>
+    <tspan x="573" y="922.8">虚拟网关 10.60.0.1</tspan>
+  </text>
+  <rect id="eth2" x="930" y="805" width="305" height="140" rx="12" fill="#ffffff" stroke="#ba5a0a" stroke-width="2" />
+  <text id="eth2-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="eth2">
+    <tspan x="948" y="841.0">eth2 · Backend</tspan>
+  </text>
+  <text id="eth2-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="eth2">
+    <tspan x="948" y="876.0">10.60.1.4 · NVA 下一跳</tspan>
+    <tspan x="948" y="899.4">IP forwarding = On</tspan>
+    <tspan x="948" y="922.8">虚拟网关 10.60.1.1</tspan>
+  </text>
+  <rect id="collector" x="1305" y="805" width="330" height="140" rx="12" fill="#ffffff" stroke="#7950b5" stroke-width="2" />
+  <text id="collector-title" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="collector">
+    <tspan x="1323" y="841.0">Log collector</tspan>
+  </text>
+  <text id="collector-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="collector">
+    <tspan x="1323" y="876.0">10.60.2.4 · rsyslog + AMA</tspan>
+    <tspan x="1323" y="899.4">PIP 仅 Agent 出站用途</tspan>
+    <tspan x="1323" y="922.8">无公网 SSH</tspan>
+  </text>
+  <rect id="eu-vm" x="110" y="520" width="300" height="120" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" />
+  <text id="eu-vm-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="600" data-owner="eu-vm">
+    <tspan x="128" y="555.0">EU workload VM</tspan>
+  </text>
+  <text id="eu-vm-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="400" data-owner="eu-vm">
+    <tspan x="128" y="590.0">10.61.0.4 · Ubuntu 24.04</tspan>
+    <tspan x="128" y="612.1">无 PIP · 演示 TCP/8080</tspan>
+  </text>
+  <rect id="eu-rt" x="95" y="685" width="330" height="120" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" />
+  <text id="eu-rt-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="600" data-owner="eu-rt">
+    <tspan x="113" y="721.0">eu-workload-rt</tspan>
+  </text>
+  <text id="eu-rt-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="eu-rt">
+    <tspan x="113" y="757.0">关联 workload subnet</tspan>
+    <tspan x="113" y="781.7">12 条前缀 → 10.60.1.4</tspan>
+  </text>
+  <rect id="remote-vm" x="1855" y="435" width="415" height="120" rx="12" fill="#ffffff" stroke="#087f6d" stroke-width="2" />
+  <text id="remote-vm-title" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="23" font-weight="600" data-owner="remote-vm">
+    <tspan x="1873" y="472.0">Remote workload VM</tspan>
+  </text>
+  <text id="remote-vm-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="remote-vm">
+    <tspan x="1873" y="507.0">10.62.0.4 · Ubuntu 24.04</tspan>
+    <tspan x="1873" y="531.7">无 PIP · 演示 TCP/8080</tspan>
+  </text>
+  <rect id="remote-rt" x="1835" y="600" width="455" height="120" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" />
+  <text id="remote-rt-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="23" font-weight="600" data-owner="remote-rt">
+    <tspan x="1853" y="637.0">remote-workload-rt</tspan>
+  </text>
+  <text id="remote-rt-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="remote-rt">
+    <tspan x="1853" y="673.0">关联 workload subnet</tspan>
+    <tspan x="1853" y="699.0">三条前缀 → 10.60.1.4</tspan>
+  </text>
+  <rect id="law" x="535" y="1100" width="470" height="135" rx="12" fill="#f4effb" stroke="#7950b5" stroke-width="2" />
+  <text id="law-title" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="600" data-owner="law">
+    <tspan x="553" y="1138.0">EU Log Analytics</tspan>
+  </text>
+  <text id="law-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="law">
+    <tspan x="553" y="1173.0">Syslog · 默认保留 90 天</tspan>
+    <tspan x="553" y="1199.0">collector 通过 AMA / DCR 写入</tspan>
+  </text>
+  <rect id="storage" x="1170" y="1100" width="520" height="150" rx="12" fill="#f4effb" stroke="#7950b5" stroke-width="2" />
+  <text id="storage-title" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="600" data-owner="storage">
+    <tspan x="1188" y="1138.0">EU Standard_GRS Storage</tspan>
+  </text>
+  <text id="storage-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="storage">
+    <tspan x="1188" y="1172.0">am-syslog · protected append writes</tspan>
+    <tspan x="1188" y="1196.7">默认 365 天 / Unlocked，另行锁定</tspan>
+    <tspan x="1188" y="1221.4">publicNetworkAccess = Disabled</tspan>
+  </text>
+  <rect id="nsg-note" x="1775" y="1020" width="585" height="300" rx="12" fill="#fffaf2" stroke="#ba5a0a" stroke-width="2" />
+  <text id="nsg-note-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="600" data-owner="nsg-note">
+    <tspan x="1793" y="1059.0">NSG / 实施边界</tspan>
+  </text>
+  <text id="nsg-note-body" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="nsg-note">
+    <tspan x="1793" y="1092.0">eth0：仅 management subnet + 获批私网</tspan>
+    <tspan x="1793" y="1116.7">TCP 22 / 443 / 18190 / 19009</tspan>
+    <tspan x="1793" y="1141.4">Windows：仅 Bastion 来源 TCP/3389</tspan>
+    <tspan x="1793" y="1166.1">数据面：受保护 Spoke；可选限源 TCP/18080</tspan>
+    <tspan x="1793" y="1190.8">collector：10.60.1.4/32 → UDP/514</tspan>
+    <tspan x="1793" y="1215.5">TCP/514 仅预留，不代表已启用 TLS</tspan>
+    <tspan x="1793" y="1240.2">公网 IP 不开放 Gaia / SSH / SmartConsole</tspan>
+  </text>
+  <polyline id="nic-management" points="680,510 680,545 830,545 830,565" fill="none" stroke="#8293a7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <polyline id="nic-frontend" points="950,685 950,710 895,710 895,885 860,885" fill="none" stroke="#8293a7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <polyline id="nic-backend" points="1100,685 1100,710 1270,710 1270,885 1235,885" fill="none" stroke="#8293a7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <polyline id="bastion-rdp" points="1290,450 1210,450" fill="none" stroke="#087f6d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#head-087f6d)" />
+  <polyline id="windows-gaia" points="840,453 810,453" fill="none" stroke="#087f6d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#head-087f6d)" />
+  <polyline id="peering-primary" points="420,830 420,1000 500,1000" fill="none" stroke="#1768ac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#head-1768ac)" marker-end="url(#head-1768ac)" />
+  <text id="primary-peer-label" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="">
+    <tspan x="85" y="878.0">同区域 VNet Peering</tspan>
+    <tspan x="85" y="901.4">双向；forwarded traffic = true</tspan>
+  </text>
+  <polyline id="peering-remote" points="1810,760 1748,760 1748,1000 1690,1000" fill="none" stroke="#1768ac" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#head-1768ac)" marker-end="url(#head-1768ac)" />
+  <text id="remote-peer-label" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="">
+    <tspan x="1800" y="830.0">Azure Global VNet Peering</tspan>
+    <tspan x="1800" y="856.0">双向；forwarded traffic = true</tspan>
+    <tspan x="1800" y="882.0">两个 Spoke 不直接 Peering</tspan>
+  </text>
+  <polyline id="collector-to-law" points="1470,945 1470,1060 765,1060 765,1100" fill="none" stroke="#7950b5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#head-7950b5)" />
+  <text id="ama-label" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="">
+    <tspan x="840" y="1086.0">Azure Monitor Agent + DCR → Syslog</tspan>
+  </text>
+  <polyline id="law-to-storage" points="1005,1170 1170,1170" fill="none" stroke="#7950b5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#head-7950b5)" />
+  <text id="export-label" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="400" data-owner="">
+    <tspan x="1013" y="1123.0">显式启用</tspan>
+    <tspan x="1013" y="1143.8">Continuous Export</tspan>
+  </text>
+  <text id="paas-boundary" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="400" data-owner="">
+    <tspan x="535" y="1290.0">区域级 PaaS，不属于 Hub 子网；当前未部署 Private Endpoint / Private DNS。</tspan>
+  </text>
+  <text id="sku-note" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="21" font-weight="400" data-owner="">
+    <tspan x="75" y="1358.0">其余四台 VM 默认均为 Standard_D4ls_v6（4 vCPU / 8 GiB）。PIP = Public IP。</tspan>
+  </text>
+  <rect id="udr" x="40" y="1390" width="1140" height="320" rx="12" fill="#ffffff" stroke="#1768ac" stroke-width="2" />
+  <text id="udr-title" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="600" data-owner="udr">
+    <tspan x="60" y="1430.0">Workload UDR | 主 12 条 / 远端 3 条</tspan>
+  </text>
+  <text id="udr-header-0" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="udr">
+    <tspan x="60" y="1469.0">Route Table</tspan>
+  </text>
+  <text id="udr-header-1" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="udr">
+    <tspan x="260" y="1469.0">目标前缀</tspan>
+  </text>
+  <text id="udr-header-2" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="udr">
+    <tspan x="570" y="1469.0">下一跳类型 / IP</tspan>
+  </text>
+  <text id="udr-r0-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1507.0">EU</tspan>
+  </text>
+  <text id="udr-r0-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1507.0">0.0.0.0/0</tspan>
+  </text>
+  <text id="udr-r0-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1507.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <text id="udr-r1-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1543.0">EU</tspan>
+  </text>
+  <text id="udr-r1-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1543.0">10.62.0.0/16</tspan>
+  </text>
+  <text id="udr-r1-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1543.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <text id="udr-r2-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1579.0">EU</tspan>
+  </text>
+  <text id="udr-r2-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1579.0">Hub 除 Bastion /26（10条）</tspan>
+  </text>
+  <text id="udr-r2-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1579.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <text id="udr-r3-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1615.0">Remote</tspan>
+  </text>
+  <text id="udr-r3-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1615.0">0.0.0.0/0</tspan>
+  </text>
+  <text id="udr-r3-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1615.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <text id="udr-r4-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1651.0">Remote</tspan>
+  </text>
+  <text id="udr-r4-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1651.0">10.61.0.0/16</tspan>
+  </text>
+  <text id="udr-r4-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1651.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <text id="udr-r5-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="60" y="1687.0">Remote</tspan>
+  </text>
+  <text id="udr-r5-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="260" y="1687.0">10.60.0.0/16</tspan>
+  </text>
+  <text id="udr-r5-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="udr">
+    <tspan x="570" y="1687.0">VirtualAppliance / 10.60.1.4</tspan>
+  </text>
+  <rect id="gaia" x="1220" y="1390" width="1140" height="248" rx="12" fill="#ffffff" stroke="#ba5a0a" stroke-width="2" />
+  <text id="gaia-title" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="600" data-owner="gaia">
+    <tspan x="1240" y="1430.0">Gaia 静态路由 | 部署后手工配置，不由 UDR 自动生成</tspan>
+  </text>
+  <text id="gaia-header-0" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="gaia">
+    <tspan x="1240" y="1469.0">Destination</tspan>
+  </text>
+  <text id="gaia-header-1" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="gaia">
+    <tspan x="1630" y="1469.0">Next hop</tspan>
+  </text>
+  <text id="gaia-header-2" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="600" data-owner="gaia">
+    <tspan x="1990" y="1469.0">Egress</tspan>
+  </text>
+  <text id="gaia-r0-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1240" y="1507.0">0.0.0.0/0</tspan>
+  </text>
+  <text id="gaia-r0-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1630" y="1507.0">10.60.0.1</tspan>
+  </text>
+  <text id="gaia-r0-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1990" y="1507.0">eth1</tspan>
+  </text>
+  <text id="gaia-r1-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1240" y="1543.0">10.61.0.0/16</tspan>
+  </text>
+  <text id="gaia-r1-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1630" y="1543.0">10.60.1.1</tspan>
+  </text>
+  <text id="gaia-r1-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1990" y="1543.0">eth2</tspan>
+  </text>
+  <text id="gaia-r2-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1240" y="1579.0">10.62.0.0/16</tspan>
+  </text>
+  <text id="gaia-r2-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1630" y="1579.0">10.60.1.1</tspan>
+  </text>
+  <text id="gaia-r2-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1990" y="1579.0">eth2</tspan>
+  </text>
+  <text id="gaia-r3-c0" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1240" y="1615.0">10.60.2.0/24</tspan>
+  </text>
+  <text id="gaia-r3-c1" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1630" y="1615.0">10.60.1.1</tspan>
+  </text>
+  <text id="gaia-r3-c2" fill="#172b4d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="400" data-owner="gaia">
+    <tspan x="1990" y="1615.0">eth2</tspan>
+  </text>
+  <text id="gaia-topology" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="">
+    <tspan x="1240" y="1680.0">eth2 Anti-Spoofing：network defined by routing</tspan>
+    <tspan x="1240" y="1706.0">额外管理私网：还需经 10.60.3.1 / eth0 的回程路由</tspan>
+  </text>
+  <text id="bgp-note" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="">
+    <tspan x="60" y="1746.0">两张 UDR 表均关闭 BGP route propagation；Peering 本身不会强制检查。</tspan>
+  </text>
+  <rect id="packet-paths" x="40" y="1775" width="2320" height="145" rx="12" fill="#f7f9fc" stroke="#8293a7" stroke-width="2" />
+  <text id="path-egress" fill="#ba5a0a" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="400" data-owner="packet-paths">
+    <tspan x="60" y="1812.0">南北向：Workload → UDR → eth2 → 安全策略 / Hide NAT → eth1 → Azure Public IP NAT → Internet</tspan>
+  </text>
+  <text id="path-eastwest" fill="#1768ac" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="400" data-owner="packet-paths">
+    <tspan x="60" y="1852.0">东西向：EU → UDR / Peering → eth2 → Policy / No-NAT → eth2 / 10.60.1.1 → Global Peering → Remote；回程也经过 NVA</tspan>
+  </text>
+  <text id="path-audit" fill="#7950b5" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="400" data-owner="packet-paths">
+    <tspan x="60" y="1892.0">审计：Log Server → eth2 → UDP/514 → collector → AMA / DCR → Log Analytics → 显式启用 Export → GRS；锁定前仍是 Unlocked</tspan>
+  </text>
+  <text id="source" fill="#536579" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="400" data-owner="">
+    <tspan x="42" y="1960.0">依据：README.md、docs/network-ip-plan.md、infra/*.tf；未加入 HA / ILB / VPN / ExpressRoute，不把历史现场验证当作当前状态。</tspan>
+  </text>
+  <text id="path-bastion" fill="#087f6d" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="400" data-owner="">
+    <tspan x="1240" y="1748.0">主 Spoke 回程：10.60.4.0/26 → 系统 Peering；不经 NVA</tspan>
+  </text>
+</svg>

@@ -55,6 +55,11 @@ Hub 位于画布中央，Primary Spoke 在左、Remote Spoke 在右；底部只�
 - 均启用 `allow_forwarded_traffic`。
 - EU 和 Remote 不直接 peering。
 
+主 workload 表默认为 12 条：默认与对端前缀，加 Hub 精确排除
+`10.60.4.0/26` 后的 10 条补集；图中 Hub 补集为汇总标签，完整列表见
+[网络规划](network-ip-plan.md)。远端仍是原来的 3 条。关闭管理工作站/Bastion 时，
+主表恢复原 Hub `/16`，共 3 条。
+
 ## 第二页：路由与流量
 
 每条泳道只从左到右。
@@ -111,6 +116,10 @@ Operator -> Azure Bastion -> Windows 10.60.3.10
 ```
 
 Gateway Public IP 只绑定 `eth1`，frontend/backend NSG 不开放管理端口。
+
+主 workload 还可直接通过 `Bastion ↔ Hub–EU Spoke Peering ↔ 10.61.0.4:22` 管理，
+不经 Windows 或 CloudGuard。主表只对 Bastion `/26` 留出系统 Peering 回程，
+其他 Hub 地址仍受检。该例外不等于启用 Ubuntu 密码认证，也未应用到远端 Spoke。
 
 ## 第三页：手工安全策略与保留自动化
 
