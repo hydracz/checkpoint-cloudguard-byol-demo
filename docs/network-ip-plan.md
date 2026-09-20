@@ -59,17 +59,37 @@ SKU catalog 查询不能保证即时容量。
 
 ### 主工作负载 Route Table
 
-资源名：`cpbyol-eu-workload-rt`
+资源名：`cpbyol-eu-workload-rt`。默认开启管理工作站/Bastion 时共 **12 条**：
 
 | 路由名 | Prefix | Next hop type | Next hop IP | 目的 |
 | --- | --- | --- | --- | --- |
 | `default-via-checkpoint` | `0.0.0.0/0` | `VirtualAppliance` | `10.60.1.4` | 所有互联网出站经 Check Point |
 | `remote-spoke-via-checkpoint` | `10.62.0.0/16` | `VirtualAppliance` | `10.60.1.4` | 主工作负载 → 远端工作负载 |
-| `hub-via-checkpoint` | `10.60.0.0/16` | `VirtualAppliance` | `10.60.1.4` | 主工作负载访问 Hub 时仍经过 Check Point |
+| `hub-inspect-10-60-0-0-22` | `10.60.0.0/22` | `VirtualAppliance` | `10.60.1.4` | Hub 补集：frontend/backend/collector/management |
+| `hub-inspect-10-60-4-64-26` | `10.60.4.64/26` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-4-128-25` | `10.60.4.128/25` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-5-0-24` | `10.60.5.0/24` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-6-0-23` | `10.60.6.0/23` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-8-0-21` | `10.60.8.0/21` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-16-0-20` | `10.60.16.0/20` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-32-0-19` | `10.60.32.0/19` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-64-0-18` | `10.60.64.0/18` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+| `hub-inspect-10-60-128-0-17` | `10.60.128.0/17` | `VirtualAppliance` | `10.60.1.4` | Hub 补集 |
+
+这些 Hub UDR 精确覆盖 `10.60.0.0/16` 减去 `10.60.4.0/26`：65,472 个地址继续受检，
+只有 Bastion 子网的 64 个地址不匹配 Hub UDR。返回 Bastion 的包使用系统 Hub Peering
+`/16`，优先于 NVA 默认 `/0`。**不创建到 Bastion 的 `/26` UDR**，也不保留主表旧
+`hub-via-checkpoint /16`；Azure UDR 的 next hop 不能填写 `Virtual network peering`。
+
+`infra/routing.tf` 根据 `hub_address_space` 和 `bastion_subnet_prefix` 计算补集；
+路由数随前缀长度变化。二者必须为规范 IPv4 CIDR，Bastion 固定 `/26`，开启时必须严格位于
+Hub 内。关闭 `enable_management_workstation` 后，主表只保留默认、对端和原
+`hub-via-checkpoint` 三条，不再排除未部署的 Bastion 子网。
 
 ### 远端工作负载 Route Table
 
-资源名：`cpbyol-remote-workload-rt`
+资源名：`cpbyol-remote-workload-rt`，仍为原来的 **3 条**；本次不改变远端回程策略，
+也不宣称远端 workload 的 Bastion 直连已经可用。
 
 | 路由名 | Prefix | Next hop type | Next hop IP | 目的 |
 | --- | --- | --- | --- | --- |
@@ -79,6 +99,45 @@ SKU catalog 查询不能保证即时容量。
 
 BGP route propagation 在两个工作负载 Route Table 上关闭，避免未来专线路由在
 未评审时覆盖演示 UDR。
+
+### Bastion 回程修正与迁移
+
+旧主表的 Hub `/16` UDR 会让 `Bastion → 主 workload` 去程直接走 Peering、回程却进入
+NVA。这是需要修正的非对称设计；具体丢包点仍需结合有效路由、NSG 和连接诊断判断。
+本方案只改**主 workload 的路由表**，不改 Bastion 子网、远端表、Gateway 的两张表，
+也不改 Gaia 默认路由。
+
+在 Portal 手工迁移旧主表时按以下顺序操作；**已完成相同修正的环境不要重复增删**：
+
+1. 打开主 workload → Networking → NIC → Subnet，确认关联的是
+   `cpbyol-eu-workload-rt`；保存现有三条路由和关联信息。
+2. 打开该 Route Table → **Routes → Add**，逐条添加上表 10 条 `hub-inspect-*`。
+   Next hop type 均为 **Virtual appliance**，Next hop address 均为 **`10.60.1.4`**。
+   暂时保留旧 `hub-via-checkpoint`，此时表内应为 13 条。
+3. 确认 10 条的名称、前缀和下一跳全部正确后，删除旧
+   **`hub-via-checkpoint` / `10.60.0.0/16`**，最终 12 条；保留默认和对端路由。
+4. 在 workload NIC 的 **Effective routes** 中确认 Bastion 地址的最长匹配是系统
+   Peering，不是 NVA；Hub 其余地址、默认出站和对端 Spoke 仍按表受检。
+   在 Bastion 的 **Connection troubleshoot** 中检查目标 `10.61.0.4`、TCP/22，
+   再用匹配的 SSH 凭据实际登录。`Reachable` 仅证明 TCP，不证明认证或全部安全策略。
+5. 如需回滚，**先恢复**旧 `hub-via-checkpoint 10.60.0.0/16 → VirtualAppliance 10.60.1.4`，
+   再删除本次 10 条；默认、对端路由和子网关联始终保留。回滚会恢复旧 Bastion 回程问题。
+
+不要只把旧 Hub `/16` 改成 `/22`，否则会放过 Bastion 以外的 Hub 地址；不要给
+`AzureBastionSubnet` 绑定 UDR，也不要尝试用跨 VNet 的 `VnetLocal /26` 代替 Peering。
+Gateway frontend/backend 路由表由 vendored Check Point 模块创建，其 `To-Internal`、
+`Local-Subnet`、`To-Internet` 等路由不属于此次迁移。
+
+**与 Terraform 对齐：** 在持有原 state 和 tfvars 的部署目录更新代码后审查
+`./scripts/plan.sh --var-file configs/demo.tfvars`。已经通过 Portal 修正且 CIDR 相同的环境，
+计划不应再恢复主表旧 Hub `/16`。现有表仍由原 `azurerm_route_table.eu_workload` 的 inline
+routes 管理，不要额外导入独立 `azurerm_route`；也不要用空 state 对现有环境重新部署。
+此次路由修正本身不要求替换 VM、NIC 或 Peering，若计划包含这些变更应停止并单独评审。
+本文的增删顺序针对手工迁移，不承诺一次 Terraform apply 的逐条路由更新顺序。
+
+例外依据目标子网对所有协议生效，并不是 Bastion-only SSH 访问控制。Ubuntu 密钥认证、
+NSG 和 guest firewall 保持原状；密码启用、收紧 SSH 来源和清理手工临时公网 IP 均需另行批准，
+不能与本次路由更改混为一谈。
 
 ## Gaia 静态路由
 
@@ -135,6 +194,8 @@ NSG 绑定 Gateway `eth0` NIC，不绑定 frontend/backend subnet。
 - EU 和 Remote 分别使用同区域 NSG，避免跨区域 NSG 关联失败。
 - TCP/8080 只允许 Hub、EU Spoke 和 Remote Spoke。
 - 启用 DNAT 时，主工作负载 NSG 额外允许 `inbound_demo_source_cidr`，因为 Check Point 保留原始来源 IP。
+- SSH 使用现有默认 `AllowVnetInBound` 和 guest 配置；本次不新增 Any/Internet SSH Allow，
+  也不把 NSG 改成 Bastion-only。若现场有额外 Deny，需按实际优先级单独诊断。
 
 ### Collector NSG
 
@@ -150,6 +211,16 @@ NSG 绑定 Gateway `eth0` NIC，不绑定 frontend/backend subnet。
 - Windows NIC 不绑定 Public IP；Bastion subnet 不复用工作站 NSG。
 
 ## 数据面逐包路径
+
+### 主 Spoke 的 Bastion 管理路径
+
+```text
+Bastion 10.60.4.0/26 -> Hub/EU Spoke peering -> EU VM 10.61.0.4:22
+EU VM -> system Hub peering route 10.60.0.0/16 -> Bastion
+```
+
+这条路径不经过 CloudGuard，也不通过 Windows 中转。Windows `10.60.3.10` 不在例外内，
+主 workload 到 Windows 等其他 Hub 地址仍命中 NVA UDR。
 
 ### 互联网出站
 
@@ -193,6 +264,7 @@ Approved Internet CIDR
 | 内容 | 文件 |
 | --- | --- |
 | 地址和固定 IP 计算 | `infra/locals.tf` |
+| 主 Spoke Hub/Bastion CIDR 补集与路由名计算 | `infra/routing.tf` |
 | Check Point VM/NIC/Marketplace module | `infra/checkpoint.tf` + vendored Single Gateway three-NIC patch |
 | VNet、subnet、Peering、UDR、NSG | `infra/networking.tf` |
 | Workload VM/NIC | `infra/workloads.tf` |
@@ -220,3 +292,6 @@ az network nic show-effective-route-table \
 
 我用 T01/T02 检查两个 NIC 的 effective route table。输出中的 Active
 `0.0.0.0/0` 应指向 `VirtualAppliance 10.60.1.4`。
+T01/T02 不检查 Bastion 的具体回程或 SSH 凭据；仍需按上文单独确认
+`10.60.4.0/26` 的有效路径、TCP/22 和实际登录。effective routes 和连接诊断属于
+Azure action，只有 `*/read` 权限时不能以静态 Route Table 回读代替主动连通性结果。

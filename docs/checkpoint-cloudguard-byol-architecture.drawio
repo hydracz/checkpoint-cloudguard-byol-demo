@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-09-03T09:00:00.000Z" agent="GitHub Copilot CLI" version="24.7.17" type="device" compressed="false">
+<mxfile host="app.diagrams.net" modified="2026-09-17T08:15:00.000Z" agent="GitHub Copilot CLI" version="24.7.17" type="device" compressed="false">
   <diagram id="resource-ip-plan" name="01-现场环境资源与IP">
     <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
       <root>
@@ -59,13 +59,13 @@
         <mxCell id="r-bastion-subnet" value="AzureBastionSubnet 10.60.4.0/26" style="swimlane;horizontal=1;startSize=34;rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#F7FBFF;fontStyle=1;fontSize=12;fontColor=#0747A6;" vertex="1" parent="1">
           <mxGeometry x="435" y="660" width="280" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="r-bastion" value="Azure Bastion Basic&#xa;RDP only to Windows client" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
+        <mxCell id="r-bastion" value="Azure Bastion Basic&#xa;Windows RDP / primary workload SSH" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
           <mxGeometry x="455" y="705" width="240" height="42" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-spoke" value="EU Spoke VNet 10.61.0.0/16" style="swimlane;horizontal=1;startSize=30;rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;strokeColor=#00A3BF;fillColor=#FFFFFF;fontStyle=1;fontSize=13;fontColor=#006B76;" vertex="1" parent="1">
           <mxGeometry x="80" y="205" width="300" height="360" as="geometry"/>
         </mxCell>
-        <mxCell id="r-eu-rt" value="Route Table: cpbyol-eu-workload-rt&#xa;0.0.0.0/0 → 10.60.1.4&#xa;10.62.0.0/16 → 10.60.1.4&#xa;10.60.0.0/16 → 10.60.1.4" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
+        <mxCell id="r-eu-rt" value="cpbyol-eu-workload-rt: 12 UDRs&#xa;0.0.0.0/0 + 10.62.0.0/16 → NVA&#xa;Hub minus 10.60.4.0/26: 10 UDRs&#xa;NVA 10.60.1.4; Bastion via peering" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#2684FF;fillColor=#DEEBFF;fontSize=11;fontColor=#0747A6;" vertex="1" parent="1">
           <mxGeometry x="100" y="255" width="260" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="r-eu-subnet" value="Subnet: workload 10.61.0.0/24&#xa;NSG: inbound TCP/8080 from protected networks" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#00A3BF;fillColor=#E6FCFF;fontSize=11;fontColor=#006B76;" vertex="1" parent="1">

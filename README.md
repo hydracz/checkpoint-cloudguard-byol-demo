@@ -58,6 +58,13 @@ Hub 内的私有 Windows 管理工作站和 Azure Bastion；`deploy.sh` 不登�
 Azure Global VNet Peering 和网络安全组（NSG）的字段见
 [网络与 IP 规划](docs/network-ip-plan.md)。
 
+首次阅读可先使用 [架构解读与 Step-by-step 使用指南](docs/architecture-and-walkthrough.md)：
+[一页架构总览](docs/diagrams/cloudguard-overview.svg) 用于讲解，
+[网络实施详图](docs/diagrams/cloudguard-network.svg) 展开子网、NIC、UDR 和 Gaia 路由。
+两张图均附可编辑 Excalidraw 源文件，按**当前默认配置**绘制，不混用历史双网卡现场记录；
+指南分别说明基础设施部署、Bastion 私网管理、手工安全配置、审计导出和独立验证。
+可下载 [单文件离线 HTML](docs/architecture-and-walkthrough.html)，内含两张图及可编辑源文件。
+
 默认目标架构以 **West Europe** 为主区域：
 
 - Hub VNet `10.60.0.0/16` 包含 Check Point `eth0 10.60.3.4`、
@@ -65,8 +72,10 @@ Azure Global VNet Peering 和网络安全组（NSG）的字段见
   Windows 管理工作站 `10.60.3.10` 和 `AzureBastionSubnet 10.60.4.0/26`。
 - 主工作负载 `10.61.0.4` 位于 West Europe；远端工作负载
   `10.62.0.4` 位于 North Europe。
-- 两个工作负载的默认路由、对端 Spoke 和 Hub 前缀都指向
-  `VirtualAppliance 10.60.1.4`；两个 Spoke 不直接 Peering。
+- 两个工作负载的默认路由和对端 Spoke 前缀都指向 `VirtualAppliance 10.60.1.4`。
+  开启 Bastion 时，主 Spoke 将 Hub **精确排除 `10.60.4.0/26`** 后的 10 条前缀送入 NVA，
+  让 Bastion 管理回程走系统 Peering；主表共 12 条，远端仍为原来的 3 条。
+  两个 Spoke 不直接 Peering；关闭管理工作站/Bastion 时，主表恢复原 Hub `/16`，共 3 条。
 - Check Point 默认使用 `Standard_D8s_v5`；`Standard_F16s` 可作为 32 GiB 容量备用规格。
 - 日志从 Check Point 发送到 `rsyslog` 收集 VM，再由 Azure Monitor Agent
   写入 EU Log Analytics，最后持续导出到私有 GRS Storage 容器 `am-syslog`。
@@ -184,12 +193,13 @@ management_subnet_prefix      = "10.60.3.0/24"
 | `checkpoint_vm_size` | 否 | string | `Standard_D8s_v5` | Check Point VM 规格；受镜像代际和实时容量限制 |
 | `workload_vm_size` | 否 | string | `Standard_D4ls_v6` | 两台工作负载 VM 的规格 |
 | `collector_vm_size` | 否 | string | `Standard_D4ls_v6` | 日志收集 VM 的规格 |
-| `enable_management_workstation` | 否 | bool | `true` | 在 Hub VNet 部署私有 Windows Server 和 Basic Azure Bastion；关闭可避免相关持续费用 |
+| `enable_management_workstation` | 否 | bool | `true` | 部署 Windows 与 Basic Bastion，同时为主 Spoke 生成 Bastion 回程例外；关闭时恢复原 Hub 路由 |
 | `windows_client_vm_size` | 否 | string | `Standard_D4ls_v6` | 未来安装 Check Point SmartConsole 的 Windows VM 规格；实测 4 vCPU/8 GiB |
 | `windows_client_admin_username` | 否 | string | `azureadmin` | Windows 本地管理员用户名，可按客户规范修改 |
 | `windows_client_admin_password` | 否 | sensitive string | `""` | 可选独立密码；空值时复用 `checkpoint_admin_password` |
 | `management_subnet_prefix` | 否 | string | `10.60.3.0/24` | Check Point `eth0` 与 Windows 管理工作站共享的私有管理子网 |
-| `bastion_subnet_prefix` | 否 | string | `10.60.4.0/26` | 必须用于专用 `AzureBastionSubnet` |
+| `hub_address_space` | 否 | string | `10.60.0.0/16` | 规范 IPv4 网络 CIDR；开启 Bastion 时必须严格包含其子网 |
+| `bastion_subnet_prefix` | 否 | string | `10.60.4.0/26` | Hub 内的规范 IPv4 `/26`，专用于 `AzureBastionSubnet`；主 Spoke 精确排除此网段 |
 | `blocked_countries` | 否 | list(string) | `["China"]` | Check Point Repository 中的英文国家名 |
 | `enable_tls_inspection` | 否 | bool | `false` | 仅供可选内网自动化使用；手工 SmartConsole 配置不读取该开关 |
 | `r81_tls_manually_configured` | 否 | bool | `false` | R81 CA、Gateway setting、layer/rule 是否已通过 SmartConsole 配置 |
@@ -425,6 +435,26 @@ unset WINDOWS_PASSWORD
 `checkpoint_management_private_ip`。Check Point 管理 NSG 只绑定 `eth0`，默认来源
 为 `management_subnet_prefix`；`management_cidrs` 仅用于追加 VPN/运维私网。
 
+#### 主 Spoke Ubuntu 的 Bastion SSH 登录
+
+在 Portal 打开 `cpbyol-eu-workload` → **Connect → Bastion**，选择项目的 Bastion，
+协议 **SSH**、端口 **22**、用户名默认 **`azureuser`**。选择 **SSH Private Key from Local File**，
+使用原部署机 `.local/checkpoint-demo-ssh`，或与部署时 `admin_ssh_public_key` 匹配的私钥；
+不要选择 `.pub` 文件，不要把私钥提交到仓库。
+
+Bastion 直接通过 Hub–主 Spoke Peering 连接 `10.61.0.4`，不需要给 workload 绑定 Public IP，
+也不需要先进入 Windows。主路由表仅对 Bastion 子网保留系统 Peering 回程，
+其余 Hub 地址仍通过 NVA；该例外按**目标地址**对所有协议生效，不是 SSH 端口白名单。
+NSG、Ubuntu 防火墙和 SSH 认证仍单独生效，当前模板不额外开放公网 SSH。
+
+**TCP/22 显示 `Reachable` 不等于登录认证成功。** 本仓库 Ubuntu 默认
+`disable_password_authentication=true`。Bastion 支持 VM Password，但必须先由管理员
+另行授权配置 Linux 用户密码和实际 SSH 密码认证；不能直接套用 Gaia 或 Windows 的密码。
+本次路由修正不启用密码，不修改 NSG，也不扩展到远端 Spoke 的 Bastion 登录。
+
+已有环境的路由增删顺序、回滚和原 state 核对见
+[Bastion 回程修正与迁移](docs/network-ip-plan.md#bastion-回程修正与迁移)。
+
 ### 3. 登录 Gaia Portal 和 CLI
 
 部署脚本把 tfvars 的 `checkpoint_admin_password` 转换为 SHA-512 salted hash，并在
@@ -618,6 +648,8 @@ AzureRM 会在 Resource Group 仍存在时永久删除 Log Analytics workspace�
 | SSH 用户 `notused` 失败 | Gaia 登录用户是 `admin`；`notused` 只是 Azure metadata 兼容占位。 |
 | 重建 VM 后 SSH host key changed | 删除项目专用缓存：`ssh-keygen -R <MANAGEMENT_PRIVATE_IP> -f .local/known_hosts`，核对私网 IP 后重试。 |
 | 无法从公网打开 Gaia/SmartConsole | 这是预期行为。Public IP 只绑定 frontend `eth1` 且没有管理端口规则；先通过 Bastion 登录 Windows，再连接 `checkpoint_management_private_ip`。 |
+| Bastion 到主 workload 的 TCP/22 不通 | 先检查 VM/NSG/Peering 和 effective routes；旧的主表 `hub-via-checkpoint 10.60.0.0/16` 会截获 Bastion 回程。按网络规划新增 10 条补集路由，再删除旧 `/16`；不要只缩成 `/22` 或给 Bastion 子网加 UDR。 |
+| Bastion TCP/22 `Reachable`，但 VM Password 登录失败 | 路由可达与 SSH 认证是两个阶段。Ubuntu 默认密钥认证，使用 `azureuser` 和匹配私钥；密码登录需管理员另行配置，不属于本次路由修正。 |
 | 等待 `Syslog` 后出现 `jq: parse error` | 更新脚本；当前版本使用 Azure CLI 的数值计数输出，不再解析可能夹带文本的 JSON。超时会显示并保存最后一次查询错误到 `.local/azure-query-error.log`。 |
 | 30 分钟后仍无 `Syslog` 表 | 检查日志收集 VM 是否运行、`AzureMonitorLinuxAgent` extension 是否成功，以及 VM 与 DCR association 是否存在；确认后单独重跑 `./scripts/enable-audit-export.sh --var-file <TFVARS>`。 |
 | Policy install 报 interface/topology 不一致 | Gateway object 必须定义 `eth0` Management、`eth1` External 和 `eth2` Internal；`eth2` 使用 `network defined by routing`。 |

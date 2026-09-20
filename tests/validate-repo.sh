@@ -9,8 +9,9 @@ required=(
   infra/vendor/README.md infra/vendor/vendor-checksums.sha256
   infra/vendor/checkpoint-cloudguard-network-security/LICENSE
   infra/vendor/checkpoint-cloudguard-network-security/PATCHES.md
-  infra/networking.tf infra/workloads.tf infra/management.tf infra/logging.tf infra/outputs.tf
-  infra/tests/demo.tftest.hcl infra/tests/r81-module.tftest.hcl
+  infra/networking.tf infra/routing.tf infra/workloads.tf infra/management.tf infra/logging.tf infra/outputs.tf
+  infra/tests/demo.tftest.hcl infra/tests/r81-module.tftest.hcl infra/tests/bastion-routing.tftest.hcl
+  tests/validate-architecture-guide.py
   tests/preflight-console.sh tests/fixtures/legacy-two-subnets-state.json
   configs/demo.tfvars.example
   cloud-init/workload.yaml cloud-init/collector.yaml
@@ -18,6 +19,7 @@ required=(
   scripts/migrate-tfvars.sh
   scripts/publish-vhd-image.sh
   scripts/verify-vendor.sh
+  scripts/render-architecture-guide.py
   scripts/configure-policy.sh scripts/checkpoint-policy.sh scripts/inspect-checkpoint.sh
   scripts/enable-audit-export.sh
   scripts/validate-data-nsg.py
@@ -25,6 +27,10 @@ required=(
   scripts/query-logs.sh
   scripts/lock-worm.sh scripts/destroy.sh
   docs/architecture.md docs/drawio-architecture.md docs/network-ip-plan.md
+  docs/architecture-and-walkthrough.md docs/architecture-and-walkthrough.html
+  docs/templates/architecture-guide.html
+  docs/diagrams/cloudguard-overview.svg docs/diagrams/cloudguard-overview.excalidraw
+  docs/diagrams/cloudguard-network.svg docs/diagrams/cloudguard-network.excalidraw
   docs/cloudguard-image-export.md
   docs/post-deployment-validation.md
   docs/r81-image-e2e-test-and-operations.md
@@ -93,6 +99,7 @@ grep -q 'checkpoint_management_nic_id' "$ROOT/scripts/run-tests.sh"
 grep -q 'T17-data-plane-nsg-rules.json' "$ROOT/scripts/run-tests.sh"
 grep -q 'validate_no_public_management_rules' "$ROOT/scripts/run-tests.sh"
 python3 "$ROOT/scripts/validate-data-nsg.py" --self-test
+python3 "$ROOT/tests/validate-architecture-guide.py"
 grep -q -- '--outputs-file' "$ROOT/scripts/configure-policy.sh" "$ROOT/scripts/run-tests.sh"
 grep -q 'CloudGuard 部署验证报告' "$ROOT/scripts/render-test-report.py"
 grep -q 'report.html' "$ROOT/scripts/render-test-report.py"

@@ -236,7 +236,7 @@ variable "collector_vm_size" {
 }
 
 variable "enable_management_workstation" {
-  description = "Deploy a private Windows Server workstation and Basic Azure Bastion in the Check Point hub VNet for future SmartConsole use."
+  description = "Deploy a private Windows workstation and Basic Azure Bastion, and exclude the Bastion subnet from primary Spoke Hub inspection routes for symmetric management return traffic."
   type        = bool
   default     = true
 }
@@ -300,9 +300,18 @@ variable "workload_admin_username" {
 }
 
 variable "hub_address_space" {
-  description = "Hub VNet address space."
+  description = "Canonical IPv4 Hub VNet address space."
   type        = string
   default     = "10.60.0.0/16"
+
+  validation {
+    condition = try(
+      can(cidrnetmask(var.hub_address_space)) &&
+      var.hub_address_space == format("%s/%d", cidrhost(var.hub_address_space, 0), tonumber(split("/", var.hub_address_space)[1])),
+      false,
+    )
+    error_message = "hub_address_space must be a canonical IPv4 network CIDR, such as 10.60.0.0/16, without host bits."
+  }
 }
 
 variable "checkpoint_frontend_subnet_prefix" {
@@ -350,13 +359,17 @@ variable "management_subnet_prefix" {
 }
 
 variable "bastion_subnet_prefix" {
-  description = "Dedicated AzureBastionSubnet prefix in the Check Point hub VNet."
+  description = "Canonical IPv4 /26 for AzureBastionSubnet inside the Hub. Excluded from primary Spoke Hub inspection routes when the management workstation is enabled."
   type        = string
   default     = "10.60.4.0/26"
 
   validation {
-    condition     = can(cidrnetmask(var.bastion_subnet_prefix)) && endswith(var.bastion_subnet_prefix, "/26")
-    error_message = "bastion_subnet_prefix must be a valid IPv4 /26."
+    condition = try(
+      can(cidrnetmask(var.bastion_subnet_prefix)) &&
+      var.bastion_subnet_prefix == "${cidrhost(var.bastion_subnet_prefix, 0)}/26",
+      false,
+    )
+    error_message = "bastion_subnet_prefix must be a canonical IPv4 /26, such as 10.60.4.0/26, without host bits."
   }
 }
 

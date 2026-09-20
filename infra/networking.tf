@@ -92,11 +92,22 @@ resource "azurerm_route_table" "eu_workload" {
     next_hop_in_ip_address = local.gateway_backend_ip
   }
 
-  route {
-    name                   = "hub-via-checkpoint"
-    address_prefix         = var.hub_address_space
-    next_hop_type          = "VirtualAppliance"
-    next_hop_in_ip_address = local.gateway_backend_ip
+  dynamic "route" {
+    for_each = local.eu_hub_inspection_routes
+
+    content {
+      name                   = route.key
+      address_prefix         = route.value
+      next_hop_type          = "VirtualAppliance"
+      next_hop_in_ip_address = local.gateway_backend_ip
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_management_workstation || local.bastion_is_hub_subnet
+      error_message = "When enable_management_workstation is true, bastion_subnet_prefix must be a strict subnet of hub_address_space so primary workload return traffic can use VNet peering."
+    }
   }
 }
 
